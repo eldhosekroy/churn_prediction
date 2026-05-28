@@ -796,6 +796,76 @@ print(f"   F1 Score:  {f1_score(y_test, final_pred):.4f}")
 print(f"   ROC-AUC:   {roc_auc_score(y_test, final_proba):.4f}")
 
 # =============================================================================
+# =============================================================================
+# 13.a CHURN REASON EXTRACTION
+# =============================================================================
+
+print("\nExtracting suggested churn reasons for churned candidates based on call remarks and feedback...")
+
+# Aggregate all call remarks per candidate into a single text blob
+def aggregate_remarks_by_candidate(call_log_df):
+    if 'Call_Remarks' not in call_log_df.columns:
+        return pd.DataFrame(columns=['Candidate_ID', 'All_Call_Remarks'])
+    grouped = call_log_df.groupby('Candidate_ID')['Call_Remarks'].apply(
+        lambda x: ' '.join(x.dropna().astype(str))
+    ).reset_index(name='All_Call_Remarks')
+    return grouped
+
+
+def suggest_reason_from_text(remarks_text, feedback_text):
+    text = ''
+    if pd.notna(remarks_text):
+        text += str(remarks_text).lower() + ' '
+    if pd.notna(feedback_text):
+        text += str(feedback_text).lower()
+
+    # Priority-based keyword matching
+    if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
+        return 'Financial issues'
+    if any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+        return 'Lack of interest'
+    if any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+        return 'Joined another institution'
+    if any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+        return 'Communication gaps'
+
+    # Fallbacks based on short signals
+    if any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+        return 'Lack of interest'
+
+    return 'Other'
+
+
+# Build aggregated remarks and merge with the main dataframe `df`
+remarks_agg = aggregate_remarks_by_candidate(call_log)
+df_with_remarks = df.merge(remarks_agg, on='Candidate_ID', how='left')
+
+# Ensure Feedback column exists
+if 'Feedback' not in df_with_remarks.columns:
+    df_with_remarks['Feedback'] = np.nan
+
+# Generate suggested reasons for all candidates (we'll filter churned ones afterwards)
+df_with_remarks['Suggested_Churn_Reason'] = df_with_remarks.apply(
+    lambda r: suggest_reason_from_text(r.get('All_Call_Remarks', ''), r.get('Feedback', '')),
+    axis=1
+)
+
+# Prepare output for churn candidates
+churn_reasons_df = df_with_remarks.loc[df_with_remarks['Churn'] == 1, [
+    'Candidate_ID', 'Churn', 'Suggested_Churn_Reason', 'All_Call_Remarks', 'Feedback'
+]].copy()
+
+if churn_reasons_df.empty:
+    print(' No churn candidates found to suggest reasons for.')
+else:
+    churn_reasons_df.to_csv('churn_reasons.csv', index=False)
+    print(' Saved churn reasons to: churn_reasons.csv')
+
+# Also save the full dataset with suggested reasons for inspection
+df_with_remarks.to_csv('candidates_with_suggested_reasons.csv', index=False)
+print(' Saved full candidate reason dataset to: candidates_with_suggested_reasons.csv')
+
+# =============================================================================
 # 14. MODEL SAVING
 # =============================================================================
 print("\n" + "="*80)

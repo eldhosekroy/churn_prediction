@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
+import os
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -239,6 +240,26 @@ def load_data():
 
 
 @st.cache_data
+def load_churn_reasons():
+    """Attempt to load churn reason outputs saved by model.py. Returns full and short dataframes or (None, None)."""
+    full_path = os.path.join(DATA_DIR, 'candidates_with_suggested_reasons.csv')
+    short_path = os.path.join(DATA_DIR, 'churn_reasons.csv')
+    full_df = None
+    short_df = None
+    try:
+        if os.path.exists(full_path):
+            full_df = pd.read_csv(full_path)
+    except Exception:
+        full_df = None
+    try:
+        if os.path.exists(short_path):
+            short_df = pd.read_csv(short_path)
+    except Exception:
+        short_df = None
+    return full_df, short_df
+
+
+@st.cache_data
 def preprocess(candidate_profile, call_log, executive_profile):
     # ── Churn Label ──────────────────────────────
     def define_churn(row):
@@ -447,7 +468,7 @@ def sidebar():
 # ─────────────────────────────────────────────
 # PAGE 1 — OVERVIEW
 # ─────────────────────────────────────────────
-def page_overview(df, call_log_proc):
+def page_overview(df, call_log_proc, churn_full=None):
     st.markdown("""
     <div class="page-header">
         <h1>📊 Executive Overview</h1>
@@ -506,6 +527,19 @@ def page_overview(df, call_log_proc):
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Top Suggested Churn Reasons (from model outputs) ─────────
+    if churn_full is not None and 'Suggested_Churn_Reason' in churn_full.columns:
+        try:
+            reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].value_counts().reset_index()
+            reasons.columns = ['Reason', 'Count']
+            if not reasons.empty:
+                st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>', unsafe_allow_html=True)
+                fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count', color_continuous_scale=['#f87171','#fbbf24','#60a5fa'])
+                fig_reasons.update_layout(**theme(height=300, showlegend=False))
+                st.plotly_chart(fig_reasons, use_container_width=True)
+        except Exception:
+            pass
 
     # ── Row 1: Donut + Source ─────────────────────
     col1, col2 = st.columns([1, 1.6])
@@ -602,7 +636,7 @@ def page_overview(df, call_log_proc):
 # ─────────────────────────────────────────────
 # PAGE 2 — CANDIDATE EXPLORER
 # ─────────────────────────────────────────────
-def page_candidate_explorer(df, call_log_proc, executive_profile):
+def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=None):
     st.markdown("""
     <div class="page-header">
         <h1>🔍 Candidate Explorer</h1>
@@ -625,6 +659,14 @@ def page_candidate_explorer(df, call_log_proc, executive_profile):
             sel_bg = st.selectbox("Background", ["All"] + sorted(df['Background'].unique().tolist()), key="f_bg")
 
     fdf = df.copy()
+
+    # If churn suggestions exist, merge them into the working dataframe for display
+    if churn_full is not None and 'Candidate_ID' in churn_full.columns and 'Suggested_Churn_Reason' in churn_full.columns:
+        try:
+            reason_map = churn_full.set_index('Candidate_ID')['Suggested_Churn_Reason'].to_dict()
+            fdf['Suggested_Churn_Reason'] = fdf['Candidate_ID'].map(reason_map).fillna('')
+        except Exception:
+            fdf['Suggested_Churn_Reason'] = ''
     if sel_churn == "Churned": fdf = fdf[fdf['Churn'] == 1]
     elif sel_churn == "Active": fdf = fdf[fdf['Churn'] == 0]
     if sel_source != "All": fdf = fdf[fdf['Source'] == sel_source]
@@ -637,7 +679,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile):
     # ── Table ─────────────────────────────────────
     display_cols = ['Candidate_ID', 'Candidate_Name', 'Source', 'Course', 'Mode',
                     'Background', 'Role', 'Training_Session', 'Feedback',
-                    'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Total_Calls', 'Churn']
+                    'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Total_Calls', 'Churn', 'Suggested_Churn_Reason']
     display_cols = [c for c in display_cols if c in fdf.columns]
 
     tbl = fdf[display_cols].copy()
@@ -669,6 +711,9 @@ def page_candidate_explorer(df, call_log_proc, executive_profile):
 
     sel_id = st.selectbox("Select Candidate", candidate_ids, key="profile_id")
     row    = df[df['Candidate_ID'] == sel_id].iloc[0]
+    # If merged suggestions were added to fdf, prefer that for the selected row
+    if 'Suggested_Churn_Reason' in fdf.columns:
+        row = fdf[fdf['Candidate_ID'] == sel_id].iloc[0]
     calls  = call_log_proc[call_log_proc['Candidate_ID'] == sel_id].copy()
 
     churn_label = "🔴 CHURNED" if row['Churn'] == 1 else "✅ ACTIVE"
@@ -724,6 +769,11 @@ def page_candidate_explorer(df, call_log_proc, executive_profile):
         else:
             st.markdown("<p style='color:#475569;'>No call records found.</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+        # Show suggested churn reason for this candidate if available
+        if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
+            st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(248,113,113,0.06);'>"
+                        f"<b>Suggested Churn Reason:</b> {row['Suggested_Churn_Reason']}</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -984,7 +1034,7 @@ def page_payment_analysis(df):
 # ─────────────────────────────────────────────
 # PAGE 5 — LIVE PREDICTOR
 # ─────────────────────────────────────────────
-def page_live_predictor(df, model_data):
+def page_live_predictor(df, model_data, churn_full=None):
     st.markdown("""
     <div class="page-header">
         <h1>🤖 Live Churn Predictor</h1>
@@ -1056,6 +1106,9 @@ def page_live_predictor(df, model_data):
     with sc2: has_no_resp     = st.checkbox("No Response / Unreachable", value=False, key="p_hnr")
     with sc3: has_payment     = st.checkbox("Payment Discussion in Calls", value=False, key="p_hpd")
     with sc4: has_technical   = st.checkbox("Technical Discussion", value=True, key="p_htd")
+
+    # Free-text call remarks for live inference
+    call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000, placeholder="Enter recent call remarks or notes...", key="p_remarks")
 
     exec_team = st.selectbox("Executive Team", sorted(df['Executive_Team'].dropna().unique()) if 'Executive_Team' in df.columns else ['Team A','Team B','Team C','Team D'], key="p_et")
 
@@ -1199,6 +1252,41 @@ def page_live_predictor(df, model_data):
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+        # Use the same suggestion logic as model.py for parity
+        def suggest_reason_from_text(remarks_text, feedback_text):
+            text = ''
+            if remarks_text:
+                text += str(remarks_text).lower() + ' '
+            if feedback_text:
+                text += str(feedback_text).lower()
+
+            # Priority-based keyword matching (same rules as model.py)
+            if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
+                return 'Financial issues'
+            if any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+                return 'Lack of interest'
+            if any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+                return 'Joined another institution'
+            if any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+                return 'Communication gaps'
+
+            # Fallbacks based on short signals
+            if any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+                return 'Lack of interest'
+
+            # Also consider payment flags and call flags heuristically
+            if has_payment or (payment_ratio is not None and payment_ratio < 0.5):
+                return 'Financial issues'
+            if has_no_resp:
+                return 'Communication gaps'
+
+            return 'Other'
+
+        suggested_reason = suggest_reason_from_text(call_remarks, feedback)
+
+        st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(99,102,241,0.06);'>"
+                    f"<b>Suggested Churn Reason:</b> {suggested_reason}</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -1372,14 +1460,15 @@ def main():
         try:
             candidate_profile, call_log, executive_profile = load_data()
             df, call_log_proc = preprocess(candidate_profile, call_log, executive_profile)
+            churn_full, churn_short = load_churn_reasons()
         except FileNotFoundError as e:
             st.error(f"⚠️ Could not load data files: {e}\n\nPlease ensure the CSV files are in the same directory as dashboard.py.")
             st.stop()
 
     model_data = load_model()
 
-    if   "Overview"            in page: page_overview(df, call_log_proc)
-    elif "Candidate Explorer"  in page: page_candidate_explorer(df, call_log_proc, executive_profile)
+    if   "Overview"            in page: page_overview(df, call_log_proc, churn_full)
+    elif "Candidate Explorer"  in page: page_candidate_explorer(df, call_log_proc, executive_profile, churn_full)
     elif "Call Log"            in page: page_call_analysis(df, call_log_proc, executive_profile)
     elif "Payment"             in page: page_payment_analysis(df)
     elif "Predictor"           in page: page_live_predictor(df, model_data)

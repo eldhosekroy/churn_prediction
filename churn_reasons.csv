@@ -1,0 +1,24 @@
+Candidate_ID,Churn,Suggested_Churn_Reason,All_Call_Remarks,Feedback
+C0002,1,Communication gaps,No response left voicemail Second attempt no pickup,Neutral
+C0002,1,Communication gaps,No response left voicemail Second attempt no pickup,Neutral
+C0007,1,Lack of interest,Intro call not interested Not interested at this time Final attempt no change,Negative
+C0007,1,Lack of interest,Intro call not interested Not interested at this time Final attempt no change,Negative
+C0007,1,Lack of interest,Intro call not interested Not interested at this time Final attempt no change,Negative
+C0010,1,Communication gaps,Intro left voicemail Candidate asked to call after 2pm,Neutral
+C0010,1,Communication gaps,Intro left voicemail Candidate asked to call after 2pm,Neutral
+C0013,1,Communication gaps,Intro call no pickup Not reachable call dropped,Negative
+C0013,1,Communication gaps,Intro call no pickup Not reachable call dropped,Negative
+C0017,1,Communication gaps,Intro call number switched off No response number switched off,Negative
+C0017,1,Communication gaps,Intro call number switched off No response number switched off,Negative
+C0020,1,Other,Intro left brochure via email Requested brochure via email,Neutral
+C0020,1,Other,Intro left brochure via email Requested brochure via email,Neutral
+C0024,1,Lack of interest,Intro call conflict with schedule Not interested due to schedule,Negative
+C0024,1,Lack of interest,Intro call conflict with schedule Not interested due to schedule,Negative
+C0028,1,Communication gaps,Intro left voicemail Left voicemail no response,Neutral
+C0028,1,Communication gaps,Intro left voicemail Left voicemail no response,Neutral
+C0034,1,Communication gaps,Intro call no answer No response call not answered,Negative
+C0034,1,Communication gaps,Intro call no answer No response call not answered,Negative
+C0043,1,Communication gaps,Intro unreachable Candidate unreachable final,Neutral
+C0043,1,Communication gaps,Intro unreachable Candidate unreachable final,Neutral
+C0049,1,Communication gaps,Intro left SMS No response left SMS,Negative
+C0049,1,Communication gaps,Intro left SMS No response left SMS,Negative
