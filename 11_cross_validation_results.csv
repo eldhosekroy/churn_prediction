@@ -1,0 +1,9 @@
+Model,Train_F1,Test_F1,Gap,Is_Overfit
+Decision Tree,1.0,0.4,0.6,YES
+Gradient Boosting,1.0,0.4,0.6,YES
+Logistic Regression,0.9333333333333332,0.0,0.9333333333333332,YES
+Random Forest,1.0,0.0,1.0,YES
+XGBoost,1.0,0.0,1.0,YES
+AdaBoost,1.0,0.0,1.0,YES
+K-Nearest Neighbors,0.0,0.0,0.0,NO
+SVM,0.0,0.0,0.0,NO

@@ -1,0 +1,6 @@
+Technique,Train_Samples,Accuracy,Precision,Recall,F1 Score
+none,78,1.0,1.0,1.0,1.0
+class_weight,78,1.0,1.0,1.0,1.0
+oversample,128,1.0,1.0,1.0,1.0
+undersample,28,1.0,1.0,1.0,1.0
+smote,128,1.0,1.0,1.0,1.0

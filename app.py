@@ -368,9 +368,33 @@ def load_model():
             data = pickle.load(f)
             if 'model_name' not in data and 'model' in data:
                 data['model_name'] = data['model'].__class__.__name__
+            if 'balance_method' not in data:
+                data['balance_method'] = 'none'
             return data
     except Exception:
         return None
+
+
+def format_balance_method(balance_method):
+    balance_labels = {
+        'none': 'None',
+        'class_weight': 'Class Weight',
+        'oversample': 'Random Oversampling',
+        'undersample': 'Random Undersampling',
+        'smote': 'SMOTE'
+    }
+    return balance_labels.get(str(balance_method).lower(), str(balance_method))
+
+
+def balance_method_description(balance_method):
+    descriptions = {
+        'none': 'Training used the original class distribution.',
+        'class_weight': 'The model gave more weight to the minority churn class during training.',
+        'oversample': 'The minority churn class was randomly oversampled before training.',
+        'undersample': 'The majority class was randomly undersampled before training.',
+        'smote': 'Synthetic minority samples were generated with SMOTE before training.'
+    }
+    return descriptions.get(str(balance_method).lower(), 'Selected from validation F1 during model training.')
 
 
 # ─────────────────────────────────────────────
@@ -1306,6 +1330,9 @@ def page_model_performance(df, model_data):
 
     model           = model_data['model']
     feature_columns = model_data['feature_columns']
+    balance_method  = model_data.get('balance_method', 'None')
+    balance_label   = format_balance_method(balance_method)
+    balance_note    = balance_method_description(balance_method)
     model_name      = model_data.get('model_name') or model.__class__.__name__
     friendly_model  = {
         'RandomForestClassifier': 'Random Forest',
@@ -1316,7 +1343,7 @@ def page_model_performance(df, model_data):
 
     # ── Model Info ────────────────────────────────
     st.markdown('<div class="section-header"><h2>Model Information</h2></div>', unsafe_allow_html=True)
-    i1, i2, i3, i4 = st.columns(4)
+    i1, i2, i3, i4, i5 = st.columns(5)
     with i1:
         st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\">🤖</div>
             <div class=\"kpi-title\">Algorithm</div>
@@ -1339,8 +1366,26 @@ def page_model_performance(df, model_data):
             <div class="kpi-title">Features Used</div>
             <div class="kpi-value" style="color:#fbbf24;">{len(feature_columns)}</div>
             <div class="kpi-sub">Input dimensions</div></div>""", unsafe_allow_html=True)
+    with i5:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">⚖️</div>
+            <div class="kpi-title">Balancing</div>
+            <div class="kpi-value" style="color:#fbbf24; font-size:16px; margin-top:8px;">{balance_label}</div>
+            <div class="kpi-sub">Imbalance handling</div></div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header"><h2>Balancing Technique</h2></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="candidate-card">
+        <div style="display:flex; justify-content:space-between; gap:16px; align-items:center;">
+            <div>
+                <div style="font-size:13px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px;">Selected Method</div>
+                <div style="font-size:24px; font-weight:800; color:#fbbf24; margin-top:4px;">{balance_label}</div>
+            </div>
+            <div style="max-width:620px; color:#94a3b8; font-size:13px; line-height:1.5;">{balance_note}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── Feature Importance ─────────────────────────
     st.markdown('<div class="section-header"><h2>Feature Importance (Top 15)</h2></div>', unsafe_allow_html=True)

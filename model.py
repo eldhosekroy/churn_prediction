@@ -412,23 +412,165 @@ X_train_scaled[numerical_features] = scaler.fit_transform(X_train[numerical_feat
 X_test_scaled[numerical_features] = scaler.transform(X_test[numerical_features])
 
 # =============================================================================
-# 8. MODEL TRAINING & EVALUATION
+# 8. CLASS IMBALANCE ANALYSIS & BALANCING
 # =============================================================================
 print("\n" + "="*80)
-print("STEP 8: MODEL TRAINING & EVALUATION")
+print("STEP 8: CLASS IMBALANCE ANALYSIS & BALANCING")
+print("="*80)
+
+class_counts = y_train.value_counts()
+minority_ratio = class_counts.min() / class_counts.sum()
+print(f"\n Training class distribution: {class_counts.to_dict()}")
+print(f" Minority class ratio: {minority_ratio:.3f}")
+
+from sklearn.utils import resample
+
+try:
+    from imblearn.over_sampling import SMOTE
+    smote_available = True
+except ImportError:
+    SMOTE = None
+    smote_available = False
+
+def resample_train_set(X_set, y_set, method):
+    if method in ['none', 'class_weight']:
+        return X_set, y_set
+
+    if method == 'smote':
+        minority_count = y_set.value_counts().min()
+        if not smote_available or minority_count < 2:
+            return X_set, y_set
+
+        smote = SMOTE(random_state=42, k_neighbors=min(5, minority_count - 1))
+        X_resampled, y_resampled = smote.fit_resample(X_set, y_set)
+        return pd.DataFrame(X_resampled, columns=X_set.columns), pd.Series(y_resampled, name=y_set.name)
+
+    data = X_set.copy()
+    data['Churn'] = y_set
+    majority = data[data['Churn'] == 0]
+    minority = data[data['Churn'] == 1]
+
+    if len(minority) == 0 or len(majority) == 0:
+        return X_set, y_set
+
+    if method == 'oversample':
+        minority_resampled = resample(minority,
+                                      replace=True,
+                                      n_samples=len(majority),
+                                      random_state=42)
+        balanced = pd.concat([majority, minority_resampled])
+    elif method == 'undersample':
+        majority_resampled = resample(majority,
+                                      replace=False,
+                                      n_samples=len(minority),
+                                      random_state=42)
+        balanced = pd.concat([majority_resampled, minority])
+    else:
+        return X_set, y_set
+
+    balanced = balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+    return balanced.drop(columns='Churn'), balanced['Churn']
+
+balance_methods = ['none', 'class_weight', 'oversample', 'undersample']
+if smote_available:
+    balance_methods.append('smote')
+else:
+    print("\n SMOTE not available. Install imbalanced-learn to include SMOTE in balancing evaluation.")
+balance_results = []
+
+X_balance_train, X_balance_val, y_balance_train, y_balance_val = train_test_split(
+    X_train_scaled, y_train, test_size=0.2, stratify=y_train, random_state=42
+)
+
+print("\n Evaluating class balancing strategies on a validation split...")
+print("-"*95)
+print(f"{'Technique':<15} {'Train Samples':<15} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1 Score':<10}")
+print("-"*95)
+
+for method in balance_methods:
+    X_bal, y_bal = resample_train_set(X_balance_train, y_balance_train, method)
+    if method == 'class_weight':
+        baseline_model = LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
+    else:
+        baseline_model = LogisticRegression(random_state=42, max_iter=1000)
+
+    baseline_model.fit(X_bal, y_bal)
+    y_bal_pred = baseline_model.predict(X_balance_val)
+    accuracy = accuracy_score(y_balance_val, y_bal_pred)
+    precision = precision_score(y_balance_val, y_bal_pred, zero_division=0)
+    recall = recall_score(y_balance_val, y_bal_pred, zero_division=0)
+    f1 = f1_score(y_balance_val, y_bal_pred, zero_division=0)
+    balance_results.append({
+        'Technique': method,
+        'Train_Samples': len(X_bal),
+        'Accuracy': accuracy,
+        'Precision': precision,
+        'Recall': recall,
+        'F1 Score': f1
+    })
+    print(f"{method.title():<15} {len(X_bal):<15} {accuracy:<10.4f} {precision:<10.4f} {recall:<10.4f} {f1:<10.4f}")
+
+print("-"*95)
+
+balance_results_df = pd.DataFrame(balance_results).sort_values('F1 Score', ascending=False)
+print("\n Balancing Techniques Ranked by Validation F1:")
+print(balance_results_df.to_string(index=False))
+
+balance_method = balance_results_df.iloc[0]['Technique']
+balance_score = balance_results_df.iloc[0]['F1 Score']
+print(f"\n Selected balancing method: {balance_method} (validation F1 = {balance_score:.4f})")
+
+if balance_method == 'oversample':
+    print("  Applying random oversampling to the training set.")
+elif balance_method == 'undersample':
+    print("  Applying random undersampling to the training set.")
+elif balance_method == 'class_weight':
+    print("  Applying class weights to imbalance-aware estimators.")
+elif balance_method == 'smote':
+    print("  Applying SMOTE synthetic oversampling to the training set.")
+else:
+    print("  No additional balancing applied.")
+
+X_train_fit, y_train_fit = resample_train_set(X_train_scaled, y_train, balance_method)
+if balance_method == 'class_weight':
+    pos_weight = int(class_counts[0] / max(class_counts[1], 1))
+else:
+    pos_weight = 1
+
+# =============================================================================
+# 9. MODEL TRAINING & EVALUATION
+# =============================================================================
+print("\n" + "="*80)
+print("STEP 9: MODEL TRAINING & EVALUATION")
 print("="*80)
 
 # Define models to evaluate
 models = {
-    'Logistic Regression': LogisticRegression(random_state=42, max_iter=1000),
-    'Decision Tree': DecisionTreeClassifier(random_state=42),
-    'Random Forest': RandomForestClassifier(random_state=42, n_estimators=100),
+    'Logistic Regression': LogisticRegression(
+        random_state=42,
+        max_iter=1000,
+        class_weight='balanced' if balance_method == 'class_weight' else None
+    ),
+    'Decision Tree': DecisionTreeClassifier(
+        random_state=42,
+        class_weight='balanced' if balance_method == 'class_weight' else None
+    ),
+    'Random Forest': RandomForestClassifier(
+        random_state=42,
+        n_estimators=100,
+        class_weight='balanced' if balance_method == 'class_weight' else None
+    ),
     'Gradient Boosting': GradientBoostingClassifier(random_state=42),
-    'XGBoost': XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='logloss'),
+    'XGBoost': XGBClassifier(
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric='logloss',
+        scale_pos_weight=pos_weight if balance_method == 'class_weight' else 1
+    ),
     'AdaBoost': AdaBoostClassifier(random_state=42),
     'K-Nearest Neighbors': KNeighborsClassifier(),
     'Naive Bayes': GaussianNB(),
-    'SVM': SVC(random_state=42, probability=True)
+    'SVM': SVC(random_state=42, probability=True, class_weight='balanced' if balance_method == 'class_weight' else None)
 }
 
 # Evaluate each model
@@ -440,7 +582,7 @@ print("-"*80)
 
 for name, model in models.items():
     # Train model
-    model.fit(X_train_scaled, y_train)
+    model.fit(X_train_fit, y_train_fit)
     
     # Predictions
     y_pred = model.predict(X_test_scaled)
@@ -479,10 +621,10 @@ print("\n Models Ranked by F1 Score:")
 print(results_df.to_string(index=False))
 
 # =============================================================================
-# 9. CROSS-VALIDATION (Check for Overfitting)
+# 10. CROSS-VALIDATION (Check for Overfitting)
 # =============================================================================
 print("\n" + "="*80)
-print("STEP 9: CROSS-VALIDATION (Overfitting Check)")
+print("STEP 10: CROSS-VALIDATION (Overfitting Check)")
 print("="*80)
 
 print("\n Performing 5-Fold Cross-Validation...")
@@ -495,18 +637,36 @@ best_model_name = None
 best_model = None
 best_score = 0
 
+X_cv_train, y_cv_train = X_train_fit, y_train_fit
+
 for name, model in models.items():
     # Use original model (reset for fresh training)
     if 'Logistic' in name:
-        model_cv = LogisticRegression(random_state=42, max_iter=1000)
+        model_cv = LogisticRegression(
+            random_state=42,
+            max_iter=1000,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     elif 'Decision' in name:
-        model_cv = DecisionTreeClassifier(random_state=42)
+        model_cv = DecisionTreeClassifier(
+            random_state=42,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     elif 'Random' in name:
-        model_cv = RandomForestClassifier(random_state=42, n_estimators=100)
+        model_cv = RandomForestClassifier(
+            random_state=42,
+            n_estimators=100,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     elif 'Gradient' in name:
         model_cv = GradientBoostingClassifier(random_state=42)
     elif 'XGBoost' in name:
-        model_cv = XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='logloss')
+        model_cv = XGBClassifier(
+            random_state=42,
+            use_label_encoder=False,
+            eval_metric='logloss',
+            scale_pos_weight=pos_weight if balance_method == 'class_weight' else 1
+        )
     elif 'Ada' in name:
         model_cv = AdaBoostClassifier(random_state=42)
     elif 'K-Nearest' in name:
@@ -514,10 +674,14 @@ for name, model in models.items():
     elif 'Naive' in name:
         model_cv = GaussianNB()
     else:
-        model_cv = SVC(random_state=42, probability=True)
+        model_cv = SVC(
+            random_state=42,
+            probability=True,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     
     # Cross-validation on training set
-    train_cv = cross_val_score(model_cv, X_train_scaled, y_train, cv=5, scoring='f1')
+    train_cv = cross_val_score(model_cv, X_cv_train, y_cv_train, cv=5, scoring='f1')
     
     # Cross-validation on test set (generalization check)
     test_cv = cross_val_score(model_cv, X_test_scaled, y_test, cv=5, scoring='f1')
@@ -556,10 +720,10 @@ print("\n Cross-Validation Summary:")
 print(cv_results_df.sort_values('Test_Mean', ascending=False).to_string(index=False))
 
 # =============================================================================
-# 10. SELECT BEST MODEL & HYPERPARAMETER TUNING
+# 11. SELECT BEST MODEL & HYPERPARAMETER TUNING
 # =============================================================================
 print("\n" + "="*80)
-print("STEP 10: HYPERPARAMETER TUNING FOR BEST MODEL")
+print("STEP 11: HYPERPARAMETER TUNING FOR BEST MODEL")
 print("="*80)
 
 # Select top 3 models for tuning based on F1 score
@@ -602,13 +766,25 @@ if best_model_name in param_grids:
     
     # Get the model
     if 'Random' in best_model_name:
-        base_model = RandomForestClassifier(random_state=42)
+        base_model = RandomForestClassifier(
+            random_state=42,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     elif 'Gradient' in best_model_name:
         base_model = GradientBoostingClassifier(random_state=42)
     elif 'XGBoost' in best_model_name:
-        base_model = XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='logloss')
+        base_model = XGBClassifier(
+            random_state=42,
+            use_label_encoder=False,
+            eval_metric='logloss',
+            scale_pos_weight=pos_weight if balance_method == 'class_weight' else 1
+        )
     else:
-        base_model = LogisticRegression(random_state=42, max_iter=1000)
+        base_model = LogisticRegression(
+            random_state=42,
+            max_iter=1000,
+            class_weight='balanced' if balance_method == 'class_weight' else None
+        )
     
     # Grid Search
     print(f"   Searching through {len(param_grid)} parameter combinations...")
@@ -617,7 +793,7 @@ if best_model_name in param_grids:
         base_model, param_grid, cv=5, scoring='f1', n_jobs=-1, verbose=0
     )
     
-    grid_search.fit(X_train_scaled, y_train)
+    grid_search.fit(X_train_fit, y_train_fit)
     
     print(f"\n    Best Parameters: {grid_search.best_params_}")
     print(f"    Best CV F1 Score: {grid_search.best_score_:.4f}")
@@ -629,104 +805,10 @@ else:
     best_tuned_model = models[best_model_name]
 
 # =============================================================================
-# 11. FINAL MODEL EVALUATION
+# 12. OVERFITTING SOLUTION - REGULARIZATION
 # =============================================================================
 print("\n" + "="*80)
-print("STEP 11: FINAL MODEL EVALUATION")
-print("="*80)
-
-# Train final model
-best_tuned_model.fit(X_train_scaled, y_train)
-
-# Predictions
-y_pred_final = best_tuned_model.predict(X_test_scaled)
-y_proba_final = best_tuned_model.predict_proba(X_test_scaled)[:, 1]
-
-print("\n Final Model Performance on Test Set:")
-print("-"*50)
-print(f"Accuracy:  {accuracy_score(y_test, y_pred_final):.4f}")
-print(f"Precision: {precision_score(y_test, y_pred_final):.4f}")
-print(f"Recall:    {recall_score(y_test, y_pred_final):.4f}")
-print(f"F1 Score:  {f1_score(y_test, y_pred_final):.4f}")
-print(f"ROC-AUC:   {roc_auc_score(y_test, y_proba_final):.4f}")
-
-print("\n Classification Report:")
-print(classification_report(y_test, y_pred_final, target_names=['Active', 'Churned']))
-
-# Confusion Matrix
-cm = confusion_matrix(y_test, y_pred_final)
-plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['Active', 'Churned'], 
-            yticklabels=['Active', 'Churned'])
-plt.title('Confusion Matrix - Final Model', fontsize=14)
-plt.xlabel('Predicted')
-plt.ylabel('Actual')
-plt.tight_layout()
-plt.savefig('confusion_matrix.png', dpi=100)
-plt.show()
-print(" Saved: confusion_matrix.png")
-
-# ROC Curve
-fpr, tpr, thresholds = roc_curve(y_test, y_proba_final)
-plt.figure(figsize=(8, 6))
-plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (AUC = {roc_auc_score(y_test, y_proba_final):.4f})')
-plt.plot([0, 1], [0, 1], color='gray', lw=2, linestyle='--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC Curve - Final Model', fontsize=14)
-plt.legend(loc='lower right')
-plt.tight_layout()
-plt.savefig('roc_curve.png', dpi=100)
-plt.show()
-print(" Saved: roc_curve.png")
-
-# =============================================================================
-# 12. FEATURE IMPORTANCE ANALYSIS
-# =============================================================================
-print("\n" + "="*80)
-print("STEP 12: FEATURE IMPORTANCE ANALYSIS")
-print("="*80)
-
-# Get feature importance (for tree-based models)
-if hasattr(best_tuned_model, 'feature_importances_'):
-    feature_importance = pd.DataFrame({
-        'Feature': feature_columns,
-        'Importance': best_tuned_model.feature_importances_
-    }).sort_values('Importance', ascending=False)
-    
-    print("\n Top 15 Most Important Features:")
-    print(feature_importance.head(15).to_string(index=False))
-    
-    # Plot feature importance
-    plt.figure(figsize=(12, 8))
-    top_features = feature_importance.head(15)
-    sns.barplot(x='Importance', y='Feature', data=top_features, palette='viridis')
-    plt.title('Top 15 Feature Importance - Churn Prediction', fontsize=14)
-    plt.xlabel('Importance Score')
-    plt.ylabel('Features')
-    plt.tight_layout()
-    plt.savefig('feature_importance.png', dpi=100)
-    plt.show()
-    print(" Saved: feature_importance.png")
-    
-elif hasattr(best_tuned_model, 'coef_'):
-    # For logistic regression
-    feature_importance = pd.DataFrame({
-        'Feature': feature_columns,
-        'Importance': np.abs(best_tuned_model.coef_[0])
-    }).sort_values('Importance', ascending=False)
-    
-    print("\n Top 15 Most Important Features (by coefficient magnitude):")
-    print(feature_importance.head(15).to_string(index=False))
-
-# =============================================================================
-# 13. OVERFITTING SOLUTION - REGULARIZATION
-# =============================================================================
-print("\n" + "="*80)
-print("STEP 13: OVERFITTING SOLUTION - REGULARIZATION")
+print("STEP 12: OVERFITTING SOLUTION - REGULARIZATION")
 print("="*80)
 
 print("\n🔧 Applying Regularization to Prevent Overfitting...")
@@ -796,8 +878,99 @@ print(f"   F1 Score:  {f1_score(y_test, final_pred):.4f}")
 print(f"   ROC-AUC:   {roc_auc_score(y_test, final_proba):.4f}")
 
 # =============================================================================
+# 13. FINAL MODEL EVALUATION
 # =============================================================================
-# 13.a CHURN REASON EXTRACTION
+print("\n" + "="*80)
+print("STEP 13: FINAL MODEL EVALUATION")
+print("="*80)
+
+# Predictions
+y_pred_final = final_model.predict(X_test_scaled)
+y_proba_final = final_model.predict_proba(X_test_scaled)[:, 1]
+
+print("\n Final Model Performance on Test Set:")
+print("-"*50)
+print(f"Accuracy:  {accuracy_score(y_test, y_pred_final):.4f}")
+print(f"Precision: {precision_score(y_test, y_pred_final):.4f}")
+print(f"Recall:    {recall_score(y_test, y_pred_final):.4f}")
+print(f"F1 Score:  {f1_score(y_test, y_pred_final):.4f}")
+print(f"ROC-AUC:   {roc_auc_score(y_test, y_proba_final):.4f}")
+
+print("\n Classification Report:")
+print(classification_report(y_test, y_pred_final, target_names=['Active', 'Churned']))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred_final)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=['Active', 'Churned'], 
+            yticklabels=['Active', 'Churned'])
+plt.title('Confusion Matrix - Final Model', fontsize=14)
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.tight_layout()
+plt.savefig('confusion_matrix.png', dpi=100)
+plt.show()
+print(" Saved: confusion_matrix.png")
+
+# ROC Curve
+fpr, tpr, thresholds = roc_curve(y_test, y_proba_final)
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (AUC = {roc_auc_score(y_test, y_proba_final):.4f})')
+plt.plot([0, 1], [0, 1], color='gray', lw=2, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve - Final Model', fontsize=14)
+plt.legend(loc='lower right')
+plt.tight_layout()
+plt.savefig('roc_curve.png', dpi=100)
+plt.show()
+print(" Saved: roc_curve.png")
+
+# =============================================================================
+# 14. FEATURE IMPORTANCE ANALYSIS
+# =============================================================================
+print("\n" + "="*80)
+print("STEP 14: FEATURE IMPORTANCE ANALYSIS")
+print("="*80)
+
+# Get feature importance (for tree-based models)
+if hasattr(final_model, 'feature_importances_'):
+    feature_importance = pd.DataFrame({
+        'Feature': feature_columns,
+        'Importance': final_model.feature_importances_
+    }).sort_values('Importance', ascending=False)
+    
+    print("\n Top 15 Most Important Features:")
+    print(feature_importance.head(15).to_string(index=False))
+    
+    # Plot feature importance
+    plt.figure(figsize=(12, 8))
+    top_features = feature_importance.head(15)
+    sns.barplot(x='Importance', y='Feature', data=top_features, palette='viridis')
+    plt.title('Top 15 Feature Importance - Churn Prediction', fontsize=14)
+    plt.xlabel('Importance Score')
+    plt.ylabel('Features')
+    plt.tight_layout()
+    plt.savefig('feature_importance.png', dpi=100)
+    plt.show()
+    print(" Saved: feature_importance.png")
+    
+elif hasattr(final_model, 'coef_'):
+    # For logistic regression
+    feature_importance = pd.DataFrame({
+        'Feature': feature_columns,
+        'Importance': np.abs(final_model.coef_[0])
+    }).sort_values('Importance', ascending=False)
+    
+    print("\n Top 15 Most Important Features (by coefficient magnitude):")
+    print(feature_importance.head(15).to_string(index=False))
+
+# =============================================================================
+# =============================================================================
+# 15. CHURN REASON EXTRACTION
 # =============================================================================
 
 print("\nExtracting suggested churn reasons for churned candidates based on call remarks and feedback...")
@@ -866,10 +1039,10 @@ df_with_remarks.to_csv('candidates_with_suggested_reasons.csv', index=False)
 print(' Saved full candidate reason dataset to: candidates_with_suggested_reasons.csv')
 
 # =============================================================================
-# 14. MODEL SAVING
+# 16. MODEL SAVING
 # =============================================================================
 print("\n" + "="*80)
-print("STEP 14: MODEL SAVING")
+print("STEP 16: MODEL SAVING")
 print("="*80)
 
 import pickle
@@ -881,7 +1054,8 @@ model_data = {
     'feature_columns': feature_columns,
     'label_encoders': label_encoders,
     'categorical_features': categorical_features,
-    'numerical_features': numerical_features
+    'numerical_features': numerical_features,
+    'balance_method': balance_method
 }
 
 with open('churn_prediction_model.pkl', 'wb') as f:
@@ -898,7 +1072,7 @@ results_df.to_csv('model_evaluation_results.csv', index=False)
 print(" Model evaluation results saved to: model_evaluation_results.csv")
 
 # =============================================================================
-# 15. SUMMARY
+# 17. SUMMARY
 # =============================================================================
 print("\n" + "="*80)
 print("SUMMARY")
@@ -911,6 +1085,7 @@ print(f"""
  Data Handling: Processed missing values and date columns
  Data Preprocessing: Normalized numerical features, encoded categorical features
  Feature Engineering: Created 19+ features from call logs and executive data
+ Balancing Technique: Selected {balance_method} using validation F1 score
  Model Evaluation: Compared 9 different ML algorithms
  Cross-Validation: Checked for overfitting using 5-fold CV
  Hyperparameter Tuning: Optimized best model using GridSearchCV
