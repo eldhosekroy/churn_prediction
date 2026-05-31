@@ -362,12 +362,14 @@ def preprocess(candidate_profile, call_log, executive_profile):
 
 
 @st.cache_resource
-def load_model():
+def load_model(model_path, modified_time):
     try:
-        with open(DATA_DIR + "churn_prediction_model.pkl", "rb") as f:
+        with open(model_path, "rb") as f:
             data = pickle.load(f)
             if 'model_name' not in data and 'model' in data:
                 data['model_name'] = data['model'].__class__.__name__
+            if 'model_display_name' not in data:
+                data['model_display_name'] = data.get('model_name', data['model'].__class__.__name__)
             if 'balance_method' not in data:
                 data['balance_method'] = 'none'
             return data
@@ -1333,13 +1335,26 @@ def page_model_performance(df, model_data):
     balance_method  = model_data.get('balance_method', 'None')
     balance_label   = format_balance_method(balance_method)
     balance_note    = balance_method_description(balance_method)
-    model_name      = model_data.get('model_name') or model.__class__.__name__
+    model_name      = model_data.get('model_display_name') or model_data.get('model_name') or model.__class__.__name__
     friendly_model  = {
         'RandomForestClassifier': 'Random Forest',
         'GradientBoostingClassifier': 'Gradient Boosting',
         'XGBClassifier': 'XGBoost',
-        'LogisticRegression': 'Logistic Regression'
+        'LogisticRegression': 'Logistic Regression',
+        'Random Forest (Regularized)': 'Random Forest (Regularized)',
+        'Gradient Boosting (Regularized)': 'Gradient Boosting (Regularized)',
+        'XGBoost (Regularized)': 'XGBoost (Regularized)'
     }.get(model_name, model_name)
+
+    balance_select_reason = {
+        'none': 'No balancing method was selected because the original training distribution achieved the best validation performance.',
+        'class_weight': 'Class weights were chosen because they improved minority churn detection while keeping the full training set intact.',
+        'oversample': 'Random oversampling was selected because it produced the best validation F1 for the minority churn class.',
+        'undersample': 'Random undersampling was selected because it improved validation performance by balancing class representation.',
+        'smote': 'SMOTE was selected because synthetic minority samples improved validation F1 and class generalization.'
+    }.get(str(balance_method).lower(), 'Selected based on validation performance during class imbalance evaluation.')
+
+    selected_model = friendly_model
 
     # ── Model Info ────────────────────────────────
     st.markdown('<div class="section-header"><h2>Model Information</h2></div>', unsafe_allow_html=True)
@@ -1377,12 +1392,15 @@ def page_model_performance(df, model_data):
     st.markdown('<div class="section-header"><h2>Balancing Technique</h2></div>', unsafe_allow_html=True)
     st.markdown(f"""
     <div class="candidate-card">
-        <div style="display:flex; justify-content:space-between; gap:16px; align-items:center;">
+        <div style="display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap;">
             <div>
                 <div style="font-size:13px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px;">Selected Method</div>
                 <div style="font-size:24px; font-weight:800; color:#fbbf24; margin-top:4px;">{balance_label}</div>
             </div>
             <div style="max-width:620px; color:#94a3b8; font-size:13px; line-height:1.5;">{balance_note}</div>
+        </div>
+        <div style="margin-top:14px; color:#94a3b8; font-size:13px; line-height:1.6;">
+            <strong>Why this method?</strong> {balance_select_reason}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1475,15 +1493,26 @@ def page_model_performance(df, model_data):
     # ── Model Comparison Table (from model.py's logic) ──
     st.markdown('<div class="section-header"><h2>🏆 Algorithm Comparison (Reference)</h2></div>', unsafe_allow_html=True)
 
+    model_names = ['Random Forest (Regularized)', 'Gradient Boosting (Regularized)',
+                   'XGBoost (Regularized)', 'Random Forest', 'Gradient Boosting',
+                   'XGBoost', 'Logistic Regression', 'AdaBoost', 'Decision Tree', 'SVM', 'KNN', 'Naive Bayes']
+    model_strengths = ['Balanced accuracy, low overfit', 'High F1, slight overfit',
+                       'High accuracy', 'Good recall', 'High precision',
+                       'Fast', 'Interpretable', 'Ensemble', 'Fast', 'High precision', 'Simple', 'Probabilistic']
+
+    notes = []
+    for name in model_names:
+        if name == selected_model:
+            notes.append('✅ Selected')
+        elif 'Regularized' in name:
+            notes.append('Tuned')
+        else:
+            notes.append('Baseline')
+
     comparison_data = {
-        'Model':     ['Random Forest (Regularized)', 'Gradient Boosting (Reg)',
-                      'XGBoost (Reg)', 'Random Forest', 'Gradient Boosting',
-                      'XGBoost', 'Logistic Regression', 'AdaBoost', 'Decision Tree', 'SVM', 'KNN', 'Naive Bayes'],
-        'Note':      ['✅ Selected', 'Tuned', 'Tuned', 'Baseline', 'Baseline',
-                      'Baseline', 'Baseline', 'Baseline', 'Baseline', 'Baseline', 'Baseline', 'Baseline'],
-        'Strength':  ['Balanced accuracy, low overfit', 'High F1, slight overfit',
-                      'High accuracy', 'Good recall', 'High precision',
-                      'Fast', 'Interpretable', 'Ensemble', 'Fast', 'High precision', 'Simple', 'Probabilistic'],
+        'Model': model_names,
+        'Note': notes,
+        'Strength': model_strengths,
     }
     comp_df = pd.DataFrame(comparison_data)
     st.dataframe(comp_df, use_container_width=True, hide_index=True,
@@ -1510,7 +1539,9 @@ def main():
             st.error(f"⚠️ Could not load data files: {e}\n\nPlease ensure the CSV files are in the same directory as dashboard.py.")
             st.stop()
 
-    model_data = load_model()
+    model_path = os.path.join(DATA_DIR, "churn_prediction_model.pkl")
+    model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
+    model_data = load_model(model_path, model_modified_time)
 
     if   "Overview"            in page: page_overview(df, call_log_proc, churn_full)
     elif "Candidate Explorer"  in page: page_candidate_explorer(df, call_log_proc, executive_profile, churn_full)

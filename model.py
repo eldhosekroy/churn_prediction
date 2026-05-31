@@ -867,7 +867,7 @@ else:
     final_model_name = best_model_name if best_model_name else best_tuned_model.__class__.__name__
     print(f"\n Final Model Selected for Deployment: {final_model_name}")
 
-final_model.fit(X_train_scaled, y_train)
+final_model.fit(X_train_fit, y_train_fit)
 
 final_pred = final_model.predict(X_test_scaled)
 final_proba = final_model.predict_proba(X_test_scaled)[:, 1]
@@ -1050,6 +1050,8 @@ import pickle
 # Save the final model
 model_data = {
     'model': final_model,
+    'model_name': final_model_name,
+    'model_display_name': final_model_name,
     'scaler': scaler,
     'feature_columns': feature_columns,
     'label_encoders': label_encoders,
