@@ -8,3 +8,5 @@ plotly
 matplotlib
 seaborn
 imbalanced-learn
+python-dotenv
+google-generativeai

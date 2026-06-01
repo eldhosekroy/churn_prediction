@@ -15,7 +15,186 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+import json
 import os
+
+
+def parse_gemini_response(response_data):
+    if not isinstance(response_data, dict):
+        return None
+
+    text = None
+    if 'output' in response_data:
+        output = response_data['output']
+        if isinstance(output, list) and output:
+            first = output[0]
+            if isinstance(first, dict):
+                content = first.get('content', first)
+            else:
+                content = first
+            if isinstance(content, list):
+                text = ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in content)
+            else:
+                text = str(content)
+    elif 'choices' in response_data:
+        choices = response_data['choices']
+        if isinstance(choices, list) and choices:
+            choice = choices[0]
+            text = choice.get('message', {}).get('content') or choice.get('text')
+    return text
+
+
+def parse_json_like(text):
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    result = {}
+    for line in text.splitlines():
+        if ':' in line:
+            key, value = line.split(':', 1)
+            result[key.strip().lower()] = value.strip()
+    return result if result else None
+
+
+def normalize_reason_label(text):
+    if not text:
+        return None
+    normalized = text.strip().lower()
+    mappings = {
+        'Financial issues': ['financial issues', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
+        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
+        'Joined another institution': ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
+        'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
+        'Other': ['other', 'unknown', 'unclear']
+    }
+
+    for label, keywords in mappings.items():
+        if any(k in normalized for k in keywords):
+            return label
+
+    normalized_single = normalized.replace('\n', ' ').strip()
+    return normalized_single.title() if normalized_single else 'Other'
+
+
+def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    details = []
+    if isinstance(candidate_info, dict):
+        details.append("Candidate details:")
+        for key in ['Source', 'Education', 'Background', 'Role', 'Current_status', 'Stream', 'Course', 'Mode', 'Payment_Method', 'Executive_Team', 'Induction_Session', 'Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator', 'Days_Since_Payment', 'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration', 'Call_Frequency', 'Executive_Experience', 'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']:
+            if key in candidate_info and candidate_info[key] is not None:
+                details.append(f"- {key}: {candidate_info[key]}")
+    else:
+        details = ["Candidate details: Not available"]
+
+    details.append("\nCall details:")
+    details.append(f"- Feedback: {feedback_text or 'None'}")
+    details.append(f"- Call remarks: {remarks_text or 'None'}")
+    if transcript_text:
+        details.append(f"- Call transcript: {transcript_text}")
+
+    prompt = (
+        "You are an AI assistant that reads candidate information and call context to provide a churn reason and a short retention recommendation. "
+        "Respond only with a JSON object containing keys: reason, recommendation. "
+        "Choose one churn reason from: Financial issues, Lack of interest, Joined another institution, Communication gaps, Other. "
+        "Use the candidate details and call details to determine the most likely reason.\n\n"
+        + '\n'.join(details)
+    )
+    return prompt
+
+
+def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    if requests is None:
+        return {'status': 'Gemini unavailable', 'error': 'requests library not installed'}
+
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return {'status': 'Gemini unavailable', 'error': 'API key missing'}
+
+    api_url = os.getenv('GEMINI_API_URL', 'https://api.openai.com/v1/responses')
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-1.5-mini')
+
+    prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'model': model_name,
+        'input': prompt,
+        'max_output_tokens': 128
+    }
+
+    try:
+        response = requests.post(api_url, headers=headers, json=payload, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        text = parse_gemini_response(data)
+        if not text:
+            return {'status': 'Fallback heuristic', 'error': 'Empty Gemini response'}
+
+        parsed = parse_json_like(text)
+        if parsed is None:
+            parsed = {}
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            for line in lines:
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    parsed[key.strip().lower()] = value.strip()
+
+        reason = normalize_reason_label(parsed.get('reason') or parsed.get('reason_label') or text)
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'Fallback heuristic', 'error': str(e)}
+
+
+def heuristic_recommendation(reason_label):
+    mapping = {
+        'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
+        'Lack of interest': 'Re-engage with personalized course benefits, clarify learning outcomes, and offer a second consultation call.',
+        'Joined another institution': 'Reach out with retention incentives, compare program strengths, and propose a unique value-added offer.',
+        'Communication gaps': 'Increase outreach frequency, confirm contact details, and assign a dedicated counselor for follow-up.',
+        'Other': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.'
+    }
+    return mapping.get(reason_label, mapping['Other'])
+
+
+def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+    if api_response and api_response.get('reason'):
+        return api_response['reason'], api_response.get('recommendation', ''), api_response.get('status', 'AI (Gemini)')
+
+    error_context = api_response.get('error') if isinstance(api_response, dict) else 'Unknown AI failure'
+    text = ''
+    if remarks_text:
+        text += str(remarks_text).lower() + ' '
+    if feedback_text:
+        text += str(feedback_text).lower()
+
+    if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
+        reason = 'Financial issues'
+    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+        reason = 'Lack of interest'
+    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+        reason = 'Joined another institution'
+    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+        reason = 'Communication gaps'
+    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+        reason = 'Lack of interest'
+    else:
+        reason = 'Other'
+
+    return reason, heuristic_recommendation(reason), f'Fallback heuristic ({error_context})'
+
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -1191,8 +1370,9 @@ def page_live_predictor(df, model_data, churn_full=None):
         else:
             has_technical = st.checkbox("Technical Discussion", value=True, key="p_htd")
 
-    # Free-text call remarks for live inference
+    # Free-text call remarks and optional transcript for live inference
     call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000, placeholder="Enter recent call remarks or notes...", key="p_remarks")
+    call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000, placeholder="Paste full call transcript to improve AI churn reason extraction.", key="p_transcript")
 
     exec_team = st.selectbox("Executive Team", sorted(df['Executive_Team'].dropna().unique()) if 'Executive_Team' in df.columns else ['Team A','Team B','Team C','Team D'], key="p_et")
 
@@ -1340,40 +1520,22 @@ def page_live_predictor(df, model_data, churn_full=None):
             </div>
             """, unsafe_allow_html=True)
 
-        # Use the same suggestion logic as model.py for parity
-        def suggest_reason_from_text(remarks_text, feedback_text):
-            text = ''
-            if remarks_text:
-                text += str(remarks_text).lower() + ' '
-            if feedback_text:
-                text += str(feedback_text).lower()
-
-            # Priority-based keyword matching (same rules as model.py)
-            if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
-                return 'Financial issues'
-            if any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
-                return 'Lack of interest'
-            if any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
-                return 'Joined another institution'
-            if any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
-                return 'Communication gaps'
-
-            # Fallbacks based on short signals
-            if any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
-                return 'Lack of interest'
-
-            # Also consider payment flags and call flags heuristically
-            if has_payment or (payment_ratio is not None and payment_ratio < 0.5):
-                return 'Financial issues'
-            if has_no_resp:
-                return 'Communication gaps'
-
-            return 'Other'
-
-        suggested_reason = suggest_reason_from_text(call_remarks, feedback)
+        suggested_reason, ai_recommendation, extraction_method = extract_reason_and_recommendation(
+            raw_input,
+            call_remarks,
+            feedback,
+            call_transcript
+        )
 
         st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(99,102,241,0.06);'>"
-                    f"<b>Suggested Churn Reason:</b> {suggested_reason}</div>", unsafe_allow_html=True)
+                    f"<b>Suggested Churn Reason:</b> {suggested_reason}<br>"
+                    f"<small style='color:#94a3b8;'>Extraction method: {extraction_method}</small>"
+                    f"</div>", unsafe_allow_html=True)
+
+        if ai_recommendation:
+            st.markdown(f"<div style='margin-top:12px; padding:14px; border-radius:10px; background:rgba(52,211,153,0.08);'>"
+                        f"<b>AI-Generated Recommendation:</b> {ai_recommendation}" 
+                        f"</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
