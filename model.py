@@ -599,6 +599,20 @@ else:
     print("  No additional balancing applied.")
 
 X_train_fit, y_train_fit = resample_train_set(X_train_scaled, y_train, balance_method)
+
+# Calculate sample weights to emphasize high-risk indicators
+print("\n Calculating sample weights for high-risk pattern detection...")
+sample_weights = np.ones(len(X_train_fit))
+if 'High_Risk_Indicator' in X_train_fit.columns:
+    # Give 2x weight to high-risk samples (Zero_Payment AND Negative_Feedback)
+    high_risk_mask = X_train_fit['High_Risk_Indicator'] == 1
+    sample_weights[high_risk_mask] = 2.0
+    high_risk_count = high_risk_mask.sum()
+    print(f"   High-risk samples (High_Risk_Indicator=1): {high_risk_count}")
+    print(f"   Sample weights: high-risk=2.0, normal=1.0")
+else:
+    print("   Warning: High_Risk_Indicator not found")
+
 if balance_method == 'class_weight':
     pos_weight = majority_class / max(minority_class, 1)
 else:
@@ -625,6 +639,10 @@ models = {
     'Random Forest': RandomForestClassifier(
         random_state=42,
         n_estimators=100,
+        max_depth=5,  # Limit depth to capture rare patterns
+        min_samples_split=5,  # Require more samples to split
+        min_samples_leaf=2,  # Require minimum leaves
+        max_features='sqrt',  # Use sqrt of features
         class_weight='balanced' if balance_method == 'class_weight' else None
     ),
     'Gradient Boosting': GradientBoostingClassifier(random_state=42),
@@ -650,8 +668,11 @@ print(f"{'Model':<25} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1 Sco
 print("-"*80)
 
 for name, model in models.items():
-    # Train model
-    model.fit(X_train_fit, y_train_fit)
+    # Train model with sample weights for high-risk emphasis
+    if name == 'Random Forest' and 'High_Risk_Indicator' in X_train_fit.columns:
+        model.fit(X_train_fit, y_train_fit, sample_weight=sample_weights)
+    else:
+        model.fit(X_train_fit, y_train_fit)
     
     # Predictions
     y_pred = model.predict(X_test_scaled)
