@@ -1,0 +1,11 @@
+Executive_ID,Executive_Name,Mail_ID,Mobile_Number,Experience_Years,Role,Team,Location,Shift,Manager_ID,Notes
+E001,Anita Sharma,anita.sharma@rp2india.com,9123001111,5,Counselor,Team A,Delhi,Morning,MGR1,Handles UI UX and Data Science leads
+E002,Rajiv Menon,rajiv.menon@rp2india.com,9880011222,7,Telecaller,Team A,Mumbai,Morning,MGR1,Focus on cold outreach
+E003,Sunita Rao,sunita.rao@rp2india.com,9441122334,4,Counselor,Team B,Bangalore,Evening,MGR2,Handles weekend batches
+E004,Adil Khan,adil.khan@rp2india.com,9774455660,6,Senior_Counselor,Team B,Hyderabad,Morning,MGR2,Escalation point for payments
+E005,Priyanka Nair,priyanka.nair@rp2india.com,9667788990,3,Telecaller,Team C,Chennai,Evening,MGR1,Newly onboarded
+E006,Manish Gupta,manish.gupta@rp2india.com,9813344556,8,Team_Lead,Team C,Delhi,Morning,MGR3,Leads operations
+E007,Sonal Verma,sonal.verma@rp2india.com,9899912345,2,Counselor,Team D,Pune,Evening,MGR3,Part time shift
+E008,Rahul Mehra,rahul.mehra@rp2india.com,9977788990,9,Senior_Telecaller,Team D,Bangalore,Morning,MGR3,Handles VIP leads
+E009,Kavita Joshi,kavita.joshi@rp2india.com,9445566001,5,Counselor,Team A,Delhi,Evening,MGR1,Expert in scholarships
+E010,Deepak Sharma,deepak.sharma@rp2india.com,9122334455,10,Operations_Manager,Operations,Mumbai,Morning,,Oversees all teams

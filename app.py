@@ -239,21 +239,22 @@ st.markdown("""
 # (Replicates model.py logic — files untouched)
 # ─────────────────────────────────────────────
 
-DATA_DIR = "./"
+INPUT_DIR = "./data/"
+OUTPUT_DIR = "./outputs/"
 
 @st.cache_data
 def load_data():
-    candidate_profile = pd.read_csv(DATA_DIR + "Candidate Profile.csv")
-    call_log          = pd.read_csv(DATA_DIR + "Call log.csv")
-    executive_profile = pd.read_csv(DATA_DIR + "Executive Profile.csv")
+    candidate_profile = pd.read_csv(INPUT_DIR + "Candidate Profile.csv")
+    call_log          = pd.read_csv(INPUT_DIR + "Call log.csv")
+    executive_profile = pd.read_csv(INPUT_DIR + "Executive Profile.csv")
     return candidate_profile, call_log, executive_profile
 
 
 @st.cache_data
 def load_churn_reasons():
     """Attempt to load churn reason outputs saved by model.py. Returns full and short dataframes or (None, None)."""
-    full_path = os.path.join(DATA_DIR, 'candidates_with_suggested_reasons.csv')
-    short_path = os.path.join(DATA_DIR, 'churn_reasons.csv')
+    full_path = os.path.join(OUTPUT_DIR, 'candidates_with_suggested_reasons.csv')
+    short_path = os.path.join(OUTPUT_DIR, 'churn_reasons.csv')
     full_df = None
     short_df = None
     try:
@@ -1592,7 +1593,7 @@ def main():
             st.error(f"Could not load data files: {e}\n\nPlease ensure the CSV files are in the same directory as dashboard.py.")
             st.stop()
 
-    model_path = os.path.join(DATA_DIR, "churn_prediction_model.pkl")
+    model_path = os.path.join(OUTPUT_DIR, "churn_prediction_model.pkl")
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model(model_path, model_modified_time)
 

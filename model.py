@@ -64,9 +64,13 @@ print("="*80)
 # Load datasets
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-candidate_file = os.path.join(base_dir, 'Candidate Profile.csv')
-call_log_file = os.path.join(base_dir, 'Call log.csv')
-executive_file = os.path.join(base_dir, 'Executive Profile.csv')
+input_dir = os.path.join(base_dir, 'data')
+output_dir = os.path.join(base_dir, 'outputs')
+os.makedirs(output_dir, exist_ok=True)
+
+candidate_file = os.path.join(input_dir, 'Candidate Profile.csv')
+call_log_file = os.path.join(input_dir, 'Call log.csv')
+executive_file = os.path.join(input_dir, 'Executive Profile.csv')
 
 try:
     candidate_profile = pd.read_csv(candidate_file)
@@ -154,7 +158,7 @@ plt.title('Churn Distribution', fontsize=14)
 plt.xlabel('Churn (0=Active, 1=Churned)')
 plt.ylabel('Count')
 plt.tight_layout()
-plt.savefig('churn_distribution.png', dpi=100)
+plt.savefig(os.path.join(output_dir, 'churn_distribution.png'), dpi=100)
 plt.show()
 print(" Saved: churn_distribution.png")
 
@@ -909,7 +913,7 @@ plt.title('Confusion Matrix - Final Model', fontsize=14)
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 plt.tight_layout()
-plt.savefig('confusion_matrix.png', dpi=100)
+plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'), dpi=100)
 plt.show()
 print(" Saved: confusion_matrix.png")
 
@@ -925,7 +929,7 @@ plt.ylabel('True Positive Rate')
 plt.title('ROC Curve - Final Model', fontsize=14)
 plt.legend(loc='lower right')
 plt.tight_layout()
-plt.savefig('roc_curve.png', dpi=100)
+plt.savefig(os.path.join(output_dir, 'roc_curve.png'), dpi=100)
 plt.show()
 print(" Saved: roc_curve.png")
 
@@ -954,7 +958,7 @@ if hasattr(final_model, 'feature_importances_'):
     plt.xlabel('Importance Score')
     plt.ylabel('Features')
     plt.tight_layout()
-    plt.savefig('feature_importance.png', dpi=100)
+    plt.savefig(os.path.join(output_dir, 'feature_importance.png'), dpi=100)
     plt.show()
     print(" Saved: feature_importance.png")
     
@@ -1031,11 +1035,11 @@ churn_reasons_df = df_with_remarks.loc[df_with_remarks['Churn'] == 1, [
 if churn_reasons_df.empty:
     print(' No churn candidates found to suggest reasons for.')
 else:
-    churn_reasons_df.to_csv('churn_reasons.csv', index=False)
+    churn_reasons_df.to_csv(os.path.join(output_dir, 'churn_reasons.csv'), index=False)
     print(' Saved churn reasons to: churn_reasons.csv')
 
 # Also save the full dataset with suggested reasons for inspection
-df_with_remarks.to_csv('candidates_with_suggested_reasons.csv', index=False)
+df_with_remarks.to_csv(os.path.join(output_dir, 'candidates_with_suggested_reasons.csv'), index=False)
 print(' Saved full candidate reason dataset to: candidates_with_suggested_reasons.csv')
 
 # =============================================================================
@@ -1060,17 +1064,17 @@ model_data = {
     'balance_method': balance_method
 }
 
-with open('churn_prediction_model.pkl', 'wb') as f:
+with open(os.path.join(output_dir, 'churn_prediction_model.pkl'), 'wb') as f:
     pickle.dump(model_data, f)
 
 print(" Model saved to: churn_prediction_model.pkl")
 
 # Save feature importance report
-feature_importance.to_csv('feature_importance_report.csv', index=False)
+feature_importance.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
 print(" Feature importance saved to: feature_importance_report.csv")
 
 # Save model evaluation results
-results_df.to_csv('model_evaluation_results.csv', index=False)
+results_df.to_csv(os.path.join(output_dir, 'model_evaluation_results.csv'), index=False)
 print(" Model evaluation results saved to: model_evaluation_results.csv")
 
 # =============================================================================

@@ -1,0 +1,124 @@
+Candidate_ID,Executive_ID,Call_Date,Call_Time,Call_Duration,Call_Remarks
+C0001,E001,10-03-2026,10:05,3:12,Intro call candidate interested
+C0001,E001,12-03-2026,10:15,5:32,Follow up payment query answered
+C0001,E001,14-03-2026,11:00,4:00,Post confirmation document request
+C0002,E002,13-03-2026,14:05,0:45,No response left voicemail
+C0002,E002,16-03-2026,10:30,2:10,Second attempt no pickup
+C0003,E003,24-02-2026,11:00,8:00,Initial technical discussion
+C0003,E003,25-02-2026,11:30,12:10,Detailed technical discussion scheduled next session
+C0003,E003,27-02-2026,9:45,3:05,Follow up on assignment submission
+C0004,E004,04-04-2026,9:00,4:20,Intro and hybrid mode explained
+C0004,E004,05-04-2026,9:20,7:00,Confirmed attendance for hybrid session
+C0004,E004,07-04-2026,10:10,2:30,Asked about fee payment options
+C0005,E005,15-01-2026,16:00,5:00,Initial call about AIML course
+C0005,E005,18-01-2026,16:40,3:50,Asked about scholarship options
+C0005,E005,20-01-2026,12:20,2:00,Payment reminder and next steps
+C0006,E006,28-03-2026,13:00,4:00,Intro call student keen on UI UX
+C0006,E006,30-03-2026,13:10,6:25,Student enthusiastic about UI UX course
+C0006,E006,01-04-2026,9:50,1:30,Sent batch details and mentor info
+C0007,E007,01-02-2026,15:10,0:40,Intro call not interested
+C0007,E007,02-02-2026,15:55,0:30,Not interested at this time
+C0007,E007,05-02-2026,11:00,0:20,Final attempt no change
+C0008,E008,18-04-2026,10:00,6:00,Payment process initiated
+C0008,E008,20-04-2026,10:00,8:40,Payment complete confirmed
+C0008,E008,22-04-2026,14:00,2:10,Sent onboarding checklist
+C0009,E009,09-03-2026,16:00,3:50,Intro and project outline
+C0009,E009,11-03-2026,17:05,4:15,Requested course schedule
+C0009,E009,13-03-2026,9:30,1:20,Sent schedule by email
+C0010,E010,01-03-2026,12:00,0:30,Intro left voicemail
+C0010,E010,02-03-2026,12:20,0:50,Candidate asked to call after 2pm
+C0011,E001,09-02-2026,9:50,6:00,Intro to cybersecurity module
+C0011,E001,10-02-2026,10:00,3:00,Clarified syllabus and projects
+C0011,E001,11-02-2026,10:10,9:05,Discussed cybersecurity module and placement
+C0012,E002,31-03-2026,14:00,2:50,Initial contact for UI UX
+C0012,E002,02-04-2026,14:35,5:20,Confirmed joining for online batch
+C0013,E003,03-02-2026,11:00,0:20,Intro call no pickup
+C0013,E003,05-02-2026,11:45,0:40,Not reachable call dropped
+C0014,E004,20-03-2026,15:00,5:00,Intro and EMI info provided
+C0014,E004,22-03-2026,16:00,6:00,Requested EMI option details
+C0014,E004,24-03-2026,10:30,2:00,Follow up about EMI documents
+C0015,E005,04-01-2026,9:10,2:50,Intro cloud engineering course
+C0015,E005,06-01-2026,9:00,4:55,Happy with cloud engineering outline
+C0016,E006,14-03-2026,15:00,3:00,Intro to data science track
+C0016,E006,16-03-2026,15:10,3:15,Asked about project mentors
+C0016,E006,18-03-2026,10:00,1:40,Provided mentor details
+C0017,E007,08-02-2026,13:20,0:25,Intro call number switched off
+C0017,E007,10-02-2026,13:40,0:20,No response number switched off
+C0018,E008,11-04-2026,10:00,6:00,Intro and batch dates shared
+C0018,E008,13-04-2026,10:25,7:30,Student confirmed training dates
+C0018,E008,14-04-2026,11:15,2:05,Sent joining instructions
+C0019,E009,31-01-2026,10:50,3:10,Intro on AI ML capstone
+C0019,E009,03-02-2026,11:15,5:45,Discussed AI ML capstone project
+C0019,E009,05-02-2026,9:00,2:20,Follow up on capstone resources
+C0020,E010,28-02-2026,18:00,0:40,Intro left brochure via email
+C0020,E010,01-03-2026,18:00,0:55,Requested brochure via email
+C0021,E001,01-03-2026,9:20,3:50,Intro cloud lab access info
+C0021,E001,03-03-2026,9:30,6:10,Clarified cloud lab access
+C0022,E002,17-04-2026,13:20,3:40,Intro UI UX project details
+C0022,E002,19-04-2026,14:00,5:00,Confirmed UI UX project details
+C0023,E003,26-02-2026,10:50,2:30,Intro and time preferences
+C0023,E003,01-03-2026,10:50,4:05,Candidate requested time change
+C0023,E003,03-03-2026,11:15,1:10,Confirmed new time slot
+C0024,E004,25-02-2026,17:00,0:30,Intro call conflict with schedule
+C0024,E004,28-02-2026,17:20,0:35,Not interested due to schedule
+C0025,E005,29-01-2026,11:30,5:20,Intro cybersecurity assessments
+C0025,E005,31-01-2026,12:00,8:20,Discussed cybersecurity assessments
+C0025,E005,02-02-2026,10:00,2:15,Enrollment process explained
+C0026,E006,27-03-2026,16:20,2:10,Intro payment pending
+C0026,E006,29-03-2026,16:45,3:00,Payment pending follow up
+C0026,E006,01-04-2026,9:00,1:05,Provided payment link
+C0027,E007,09-01-2026,10:00,7:00,Intro confirmed full fee paid
+C0027,E007,11-01-2026,10:10,9:40,Confirmed full fee paid and onboarding
+C0028,E008,12-03-2026,15:00,0:20,Intro left voicemail
+C0028,E008,15-03-2026,15:30,0:25,Left voicemail no response
+C0029,E009,07-04-2026,11:00,3:30,Intro asked about mentors
+C0029,E009,09-04-2026,11:00,5:50,Student asked about mentors
+C0029,E009,10-04-2026,12:15,1:10,Sent mentor profiles
+C0030,E010,13-02-2026,14:00,2:20,Intro offline batch
+C0030,E010,15-02-2026,14:10,7:15,Enrolled in offline batch
+C0031,E001,07-03-2026,10:00,2:15,Intro weekend batch options
+C0031,E001,09-03-2026,10:05,2:45,Requested weekend batch info
+C0032,E002,21-01-2026,9:15,5:00,Intro cloud environment
+C0032,E002,23-01-2026,9:20,6:30,Confirmed cloud lab environment
+C0033,E003,17-03-2026,13:00,3:20,Intro data science syllabus
+C0033,E003,19-03-2026,13:55,4:00,Discussed data science syllabus
+C0034,E004,04-02-2026,11:00,0:15,Intro call no answer
+C0034,E004,06-02-2026,11:40,0:50,No response call not answered
+C0035,E005,14-04-2026,10:00,3:30,Intro UI UX assignments
+C0035,E005,16-04-2026,10:30,5:10,Confirmed UI UX assignments
+C0036,E006,04-02-2026,14:30,4:50,Intro cybersecurity placements
+C0036,E006,06-02-2026,15:00,6:45,Discussed cybersecurity placements
+C0036,E006,08-02-2026,10:20,1:20,Shared placement success stories
+C0037,E007,04-03-2026,12:00,2:10,Intro EMI options
+C0037,E007,06-03-2026,12:15,3:30,Interested but needs EMI plan
+C0037,E007,09-03-2026,15:00,0:45,Sent EMI plan details
+C0038,E008,11-01-2026,16:00,9:50,Intro AI career path
+C0038,E008,13-01-2026,16:50,11:20,Long discussion on AI career path
+C0038,E008,15-01-2026,10:10,2:05,Sent AI resources list
+C0039,E009,19-03-2026,10:00,3:00,Intro data science batch
+C0039,E009,21-03-2026,10:00,4:40,Confirmed data science batch
+C0040,E010,07-02-2026,9:30,4:00,Intro internship support
+C0040,E010,09-02-2026,9:45,5:55,Asked about internship support
+C0040,E010,11-02-2026,11:20,1:30,Provided internship contacts
+C0041,E001,24-03-2026,14:00,2:30,Intro requested recording info
+C0041,E001,26-03-2026,14:30,3:10,Requested recording of induction
+C0042,E002,19-02-2026,10:40,4:20,Intro DevOps tools covered
+C0042,E002,21-02-2026,11:00,6:00,Clarified DevOps tools covered
+C0043,E003,27-02-2026,13:00,0:15,Intro unreachable
+C0043,E003,01-03-2026,13:00,0:20,Candidate unreachable final
+C0044,E004,24-02-2026,15:00,6:20,Intro project timeline
+C0044,E004,27-02-2026,15:40,7:05,Confirmed full stack project timeline
+C0044,E004,28-02-2026,10:00,1:10,Sent project resources
+C0045,E005,13-03-2026,10:00,2:30,Intro portfolio review
+C0045,E005,15-03-2026,10:20,4:50,Discussed UI UX portfolio review
+C0046,E006,17-01-2026,12:00,8:00,Intro payment scholarship
+C0046,E006,19-01-2026,12:30,9:10,Payment and scholarship discussed
+C0047,E007,01-03-2026,16:00,2:25,Intro follow up scheduled
+C0047,E007,03-03-2026,16:00,2:25,Requested follow up next week
+C0048,E008,05-02-2026,10:00,4:50,Intro AI ML lab schedule
+C0048,E008,07-02-2026,10:15,5:00,Confirmed AI ML lab schedule
+C0049,E009,18-03-2026,11:20,0:30,Intro left SMS
+C0049,E009,20-03-2026,11:30,0:40,No response left SMS
+C0050,E010,09-03-2026,17:00,3:50,Intro documents required
+C0050,E010,11-03-2026,17:10,4:20,Confirmed next call for document upload
+C0050,E010,13-03-2026,9:00,1:00,Final check documents received
