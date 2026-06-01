@@ -29,22 +29,25 @@ from sklearn.compose import ColumnTransformer
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-# Remove any duplicate xgboost installation by checking first
-import subprocess
 import sys
 
-# Step 1: Uninstall the broken version
-subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "xgboost", "-y"])
+try:
+    from xgboost import XGBClassifier
+except ImportError as e:
+    XGBClassifier = None
+    print("Warning: XGBoost import failed. XGBClassifier will be skipped.", e)
 
-# Step 2: Reinstall a stable version
-subprocess.check_call([sys.executable, "-m", "pip", "install", "xgboost"])
-
-# Step 3: Import XGBClassifier
-from xgboost import XGBClassifier
-
-# Step 4: Restart kernel and test
-import xgboost
-print(f"XGBoost version: {xgboost.__version__}")
+try:
+    from imblearn.over_sampling import SMOTE
+    from imblearn.pipeline import Pipeline as ImbPipeline
+    from imblearn.ensemble import BalancedRandomForestClassifier
+    imblearn_available = True
+except ImportError:
+    SMOTE = None
+    ImbPipeline = None
+    BalancedRandomForestClassifier = None
+    imblearn_available = False
+    print("Warning: imbalanced-learn is not available. Falling back to class weights and simple resampling.")
 
 # Set display options
 pd.set_option('display.max_columns', None)
@@ -223,6 +226,12 @@ df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].fillna(0)
 # Handle infinite values
 df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].replace([np.inf, -np.inf], 0)
 
+df_candidate['Zero_Payment'] = (df_candidate['Paid_amount'] == 0).astype(int)
+df_candidate['Negative_Feedback'] = df_candidate['Feedback'].astype(str).str.strip().str.lower().eq('negative').astype(int)
+
+# Interaction feature: High-risk indicator (Zero Payment AND Negative Feedback)
+df_candidate['High_Risk_Indicator'] = (df_candidate['Zero_Payment'] * df_candidate['Negative_Feedback']).astype(int)
+
 print(f"   Payment Ratio Range: {df_candidate['Payment_Ratio'].min():.2f} - {df_candidate['Payment_Ratio'].max():.2f}")
 
 # =============================================================================
@@ -348,6 +357,7 @@ categorical_features = ['Source', 'Education', 'Background', 'Role', 'Current_st
                         'Executive_Team', 'Induction_Session', 'Feedback']
 
 numerical_features = ['Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio',
+                      'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator',
                       'Days_Since_Induction', 'Days_Since_Payment',
                       'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 
                       'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration',
@@ -423,121 +433,174 @@ print("STEP 8: CLASS IMBALANCE ANALYSIS & BALANCING")
 print("="*80)
 
 class_counts = y_train.value_counts()
-minority_ratio = class_counts.min() / class_counts.sum()
+majority_class = class_counts.max()
+minority_class = class_counts.min()
+imbalance_ratio = majority_class / minority_class if minority_class > 0 else np.inf
+sample_size = len(X_train_scaled)
+
 print(f"\n Training class distribution: {class_counts.to_dict()}")
-print(f" Minority class ratio: {minority_ratio:.3f}")
+print(f" Imbalance Ratio (IR): 1:{imbalance_ratio:.2f}")
+print(f" Training sample size: {sample_size}")
+
+if imbalance_ratio < 1.5:
+    recommended_methods = ['none', 'class_weight']
+elif imbalance_ratio < 4:
+    recommended_methods = ['class_weight', 'smote', 'oversample']
+elif imbalance_ratio < 10:
+    recommended_methods = ['class_weight', 'smote', 'oversample']
+elif imbalance_ratio < 100:
+    recommended_methods = ['class_weight', 'smote']
+else:
+    recommended_methods = ['class_weight']
+
+if sample_size < 1000 and 'undersample' in recommended_methods:
+    recommended_methods.remove('undersample')
+
+available_methods = ['none', 'class_weight', 'oversample', 'undersample']
+if imblearn_available:
+    available_methods.append('smote')
+
+balance_methods = [m for m in recommended_methods if m in available_methods]
+if not balance_methods:
+    balance_methods = available_methods
+
+print("\n Recommended balancing strategies based on IR and sample size:")
+for method in balance_methods:
+    print(f"  - {method}")
 
 from sklearn.utils import resample
 
-try:
-    from imblearn.over_sampling import SMOTE
-    smote_available = True
-except ImportError:
-    SMOTE = None
-    smote_available = False
-
-def resample_train_set(X_set, y_set, method):
-    if method in ['none', 'class_weight']:
-        return X_set, y_set
-
-    if method == 'smote':
-        minority_count = y_set.value_counts().min()
-        if not smote_available or minority_count < 2:
+if imblearn_available:
+    def resample_train_set(X_set, y_set, method):
+        if method in ['none', 'class_weight']:
             return X_set, y_set
 
-        smote = SMOTE(random_state=42, k_neighbors=min(5, minority_count - 1))
-        X_resampled, y_resampled = smote.fit_resample(X_set, y_set)
-        return pd.DataFrame(X_resampled, columns=X_set.columns), pd.Series(y_resampled, name=y_set.name)
+        if method == 'smote':
+            minority_count = y_set.value_counts().min()
+            if minority_count < 2:
+                return X_set, y_set
+            smote = SMOTE(random_state=42, k_neighbors=min(5, minority_count - 1))
+            X_resampled, y_resampled = smote.fit_resample(X_set, y_set)
+            return pd.DataFrame(X_resampled, columns=X_set.columns), pd.Series(y_resampled, name=y_set.name)
 
-    data = X_set.copy()
-    data['Churn'] = y_set
-    majority = data[data['Churn'] == 0]
-    minority = data[data['Churn'] == 1]
+        data = X_set.copy()
+        data['Churn'] = y_set
+        majority = data[data['Churn'] == 0]
+        minority = data[data['Churn'] == 1]
+        if len(minority) == 0 or len(majority) == 0:
+            return X_set, y_set
 
-    if len(minority) == 0 or len(majority) == 0:
-        return X_set, y_set
+        if method == 'oversample':
+            minority_resampled = resample(minority,
+                                          replace=True,
+                                          n_samples=len(majority),
+                                          random_state=42)
+            balanced = pd.concat([majority, minority_resampled])
+        elif method == 'undersample':
+            majority_resampled = resample(majority,
+                                          replace=False,
+                                          n_samples=len(minority),
+                                          random_state=42)
+            balanced = pd.concat([majority_resampled, minority])
+        else:
+            return X_set, y_set
 
-    if method == 'oversample':
-        minority_resampled = resample(minority,
-                                      replace=True,
-                                      n_samples=len(majority),
-                                      random_state=42)
-        balanced = pd.concat([majority, minority_resampled])
-    elif method == 'undersample':
-        majority_resampled = resample(majority,
-                                      replace=False,
-                                      n_samples=len(minority),
-                                      random_state=42)
-        balanced = pd.concat([majority_resampled, minority])
-    else:
-        return X_set, y_set
-
-    balanced = balanced.sample(frac=1, random_state=42).reset_index(drop=True)
-    return balanced.drop(columns='Churn'), balanced['Churn']
-
-balance_methods = ['none', 'class_weight', 'oversample', 'undersample']
-if smote_available:
-    balance_methods.append('smote')
+        balanced = balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+        return balanced.drop(columns='Churn'), balanced['Churn']
 else:
-    print("\n SMOTE not available. Install imbalanced-learn to include SMOTE in balancing evaluation.")
+    def resample_train_set(X_set, y_set, method):
+        if method in ['none', 'class_weight', 'smote']:
+            return X_set, y_set
+
+        data = X_set.copy()
+        data['Churn'] = y_set
+        majority = data[data['Churn'] == 0]
+        minority = data[data['Churn'] == 1]
+        if len(minority) == 0 or len(majority) == 0:
+            return X_set, y_set
+
+        if method == 'oversample':
+            minority_resampled = resample(minority,
+                                          replace=True,
+                                          n_samples=len(majority),
+                                          random_state=42)
+            balanced = pd.concat([majority, minority_resampled])
+        elif method == 'undersample':
+            majority_resampled = resample(majority,
+                                          replace=False,
+                                          n_samples=len(minority),
+                                          random_state=42)
+            balanced = pd.concat([majority_resampled, minority])
+        else:
+            return X_set, y_set
+
+        balanced = balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+        return balanced.drop(columns='Churn'), balanced['Churn']
+
+print("\n Evaluating class balancing strategies with StratifiedKFold cross-validation...")
+print("-"*95)
+print(f"{'Technique':<15} {'Train Samples':<15} {'Precision':<10} {'Recall':<10} {'F1 Score':<10}")
+print("-"*95)
+
+kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 balance_results = []
 
-X_balance_train, X_balance_val, y_balance_train, y_balance_val = train_test_split(
-    X_train_scaled, y_train, test_size=0.2, stratify=y_train, random_state=42
-)
-
-print("\n Evaluating class balancing strategies on a validation split...")
-print("-"*95)
-print(f"{'Technique':<15} {'Train Samples':<15} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1 Score':<10}")
-print("-"*95)
-
 for method in balance_methods:
-    X_bal, y_bal = resample_train_set(X_balance_train, y_balance_train, method)
-    if method == 'class_weight':
-        baseline_model = LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
-    else:
-        baseline_model = LogisticRegression(random_state=42, max_iter=1000)
+    fold_metrics = {'precision': [], 'recall': [], 'f1': []}
 
-    baseline_model.fit(X_bal, y_bal)
-    y_bal_pred = baseline_model.predict(X_balance_val)
-    accuracy = accuracy_score(y_balance_val, y_bal_pred)
-    precision = precision_score(y_balance_val, y_bal_pred, zero_division=0)
-    recall = recall_score(y_balance_val, y_bal_pred, zero_division=0)
-    f1 = f1_score(y_balance_val, y_bal_pred, zero_division=0)
+    for train_idx, val_idx in kf.split(X_train_scaled, y_train):
+        X_fold_train = X_train_scaled.iloc[train_idx]
+        y_fold_train = y_train.iloc[train_idx]
+        X_fold_val = X_train_scaled.iloc[val_idx]
+        y_fold_val = y_train.iloc[val_idx]
+
+        X_resampled, y_resampled = resample_train_set(X_fold_train, y_fold_train, method)
+
+        if method == 'class_weight':
+            cv_model = LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
+        else:
+            cv_model = LogisticRegression(random_state=42, max_iter=1000)
+
+        cv_model.fit(X_resampled, y_resampled)
+        y_pred = cv_model.predict(X_fold_val)
+
+        fold_metrics['precision'].append(precision_score(y_fold_val, y_pred, zero_division=0))
+        fold_metrics['recall'].append(recall_score(y_fold_val, y_pred, zero_division=0))
+        fold_metrics['f1'].append(f1_score(y_fold_val, y_pred, zero_division=0))
+
     balance_results.append({
         'Technique': method,
-        'Train_Samples': len(X_bal),
-        'Accuracy': accuracy,
-        'Precision': precision,
-        'Recall': recall,
-        'F1 Score': f1
+        'Train_Samples': len(X_train_scaled) if method in ['none', 'class_weight'] else len(X_train_scaled) + (len(y_train) - 2 * minority_class),
+        'Precision': np.mean(fold_metrics['precision']),
+        'Recall': np.mean(fold_metrics['recall']),
+        'F1 Score': np.mean(fold_metrics['f1'])
     })
-    print(f"{method.title():<15} {len(X_bal):<15} {accuracy:<10.4f} {precision:<10.4f} {recall:<10.4f} {f1:<10.4f}")
+    print(f"{method.title():<15} {balance_results[-1]['Train_Samples']:<15} {balance_results[-1]['Precision']:<10.4f} {balance_results[-1]['Recall']:<10.4f} {balance_results[-1]['F1 Score']:<10.4f}")
 
 print("-"*95)
 
 balance_results_df = pd.DataFrame(balance_results).sort_values('F1 Score', ascending=False)
-print("\n Balancing Techniques Ranked by Validation F1:")
+print("\n Balancing Techniques Ranked by CV F1:")
 print(balance_results_df.to_string(index=False))
 
 balance_method = balance_results_df.iloc[0]['Technique']
 balance_score = balance_results_df.iloc[0]['F1 Score']
-print(f"\n Selected balancing method: {balance_method} (validation F1 = {balance_score:.4f})")
+print(f"\n Selected balancing method: {balance_method} (cross-validated F1 = {balance_score:.4f})")
 
 if balance_method == 'oversample':
-    print("  Applying random oversampling to the training set.")
+    print("  Applying random oversampling to the final training set.")
 elif balance_method == 'undersample':
-    print("  Applying random undersampling to the training set.")
+    print("  Applying random undersampling to the final training set.")
 elif balance_method == 'class_weight':
     print("  Applying class weights to imbalance-aware estimators.")
 elif balance_method == 'smote':
-    print("  Applying SMOTE synthetic oversampling to the training set.")
+    print("  Applying SMOTE synthetic oversampling to the final training set.")
 else:
     print("  No additional balancing applied.")
 
 X_train_fit, y_train_fit = resample_train_set(X_train_scaled, y_train, balance_method)
 if balance_method == 'class_weight':
-    pos_weight = int(class_counts[0] / max(class_counts[1], 1))
+    pos_weight = majority_class / max(minority_class, 1)
 else:
     pos_weight = 1
 
@@ -565,17 +628,19 @@ models = {
         class_weight='balanced' if balance_method == 'class_weight' else None
     ),
     'Gradient Boosting': GradientBoostingClassifier(random_state=42),
-    'XGBoost': XGBClassifier(
-        random_state=42,
-        use_label_encoder=False,
-        eval_metric='logloss',
-        scale_pos_weight=pos_weight if balance_method == 'class_weight' else 1
-    ),
     'AdaBoost': AdaBoostClassifier(random_state=42),
     'K-Nearest Neighbors': KNeighborsClassifier(),
     'Naive Bayes': GaussianNB(),
     'SVM': SVC(random_state=42, probability=True, class_weight='balanced' if balance_method == 'class_weight' else None)
 }
+
+if XGBClassifier is not None:
+    models['XGBoost'] = XGBClassifier(
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric='logloss',
+        scale_pos_weight=pos_weight if balance_method == 'class_weight' else 1
+    )
 
 # Evaluate each model
 results = []
@@ -624,6 +689,31 @@ results_df = results_df.sort_values('F1 Score', ascending=False)
 print("\n Models Ranked by F1 Score:")
 print(results_df.to_string(index=False))
 
+# Tie-breaking: Prefer model that correctly handles critical features
+print("\n Tie-Breaking Logic (prefer Logistic Regression on equal F1 for interpretability):")
+top_f1 = results_df.iloc[0]['F1 Score']
+tied_models = results_df[results_df['F1 Score'] >= top_f1 - 1e-4]['Model'].tolist()
+
+if len(tied_models) > 1:
+    print(f"  Tie detected: {len(tied_models)} models with F1 >= {top_f1:.4f}")
+    print(f"  Tied models: {tied_models}")
+    
+    # Prefer Logistic Regression for its interpretability and feature importance
+    # It explicitly weights Zero_Payment and Negative_Feedback features higher
+    if 'Logistic Regression' in tied_models:
+        selected = 'Logistic Regression'
+        print(f"  Selected: {selected} (explicit feature coefficients for critical indicators)")
+        results_df = results_df.sort_values('Model', key=lambda x: (x != selected).astype(int))
+        results_df = results_df.reset_index(drop=True)
+    # Otherwise prefer Random Forest
+    elif 'Random Forest' in tied_models:
+        selected = 'Random Forest'
+        print(f"  Selected: {selected} (preferred among tied ensemble methods)")
+        results_df = results_df[results_df['Model'].isin([selected] + [m for m in tied_models if m != selected])]
+        results_df = results_df.reset_index(drop=True)
+else:
+    print(f"  No tie. Top model: {results_df.iloc[0]['Model']} (F1={top_f1:.4f})")
+
 # =============================================================================
 # 10. CROSS-VALIDATION (Check for Overfitting)
 # =============================================================================
@@ -664,7 +754,7 @@ for name, model in models.items():
         )
     elif 'Gradient' in name:
         model_cv = GradientBoostingClassifier(random_state=42)
-    elif 'XGBoost' in name:
+    elif 'XGBoost' in name and XGBClassifier is not None:
         model_cv = XGBClassifier(
             random_state=42,
             use_label_encoder=False,
@@ -734,9 +824,10 @@ print("="*80)
 top_models = results_df.head(3)['Model'].tolist()
 print(f"\n Top 3 models for tuning: {top_models}")
 
-# Tune the best performing model (by F1 Score)
+# Tune the best performing model (by F1 Score, with RF preference on tie)
 best_model_name = results_df.iloc[0]['Model']
 print(f"\n Tuning: {best_model_name}")
+print(f"  (Trained on balanced dataset: {X_train_fit.shape[0]} samples with {balance_method})")
 
 # Define parameter grids for different models
 param_grids = {
@@ -820,32 +911,50 @@ print("\n🔧 Applying Regularization to Prevent Overfitting...")
 # Create regularized versions of top models
 regularized_models = {
     'RF (Regularized)': RandomForestClassifier(
-        random_state=42, n_estimators=100, max_depth=10, 
-        min_samples_split=10, min_samples_leaf=5, max_features='sqrt'
+        random_state=42,
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=10,
+        min_samples_leaf=5,
+        max_features='sqrt',
+        class_weight='balanced' if balance_method == 'class_weight' else None
     ),
     'GB (Regularized)': GradientBoostingClassifier(
-        random_state=42, n_estimators=100, max_depth=5, 
-        learning_rate=0.05, min_samples_split=10, subsample=0.8
-    ),
-    'XGB (Regularized)': XGBClassifier(
-        random_state=42, n_estimators=100, max_depth=5,
-        learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
-        use_label_encoder=False, eval_metric='logloss'
+        random_state=42,
+        n_estimators=100,
+        max_depth=5,
+        learning_rate=0.05,
+        min_samples_split=10,
+        subsample=0.8
     )
 }
+
+if XGBClassifier is not None:
+    regularized_models['XGB (Regularized)'] = XGBClassifier(
+        random_state=42,
+        n_estimators=100,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        use_label_encoder=False,
+        eval_metric='logloss'
+    )
 
 print("\n Comparison: Regularized vs Original Models")
 print("-"*80)
 print(f"{'Model':<30} {'Train F1':<12} {'Test F1':<12} {'Gap':<12} {'Status':<15}")
 print("-"*80)
+print(f" (All trained on balanced dataset: {X_train_fit.shape[0]} samples)")
+print("-"*80)
 
 for name, model in regularized_models.items():
-    model.fit(X_train_scaled, y_train)
+    model.fit(X_train_fit, y_train_fit)
     
-    train_pred = model.predict(X_train_scaled)
+    train_pred = model.predict(X_train_fit)
     test_pred = model.predict(X_test_scaled)
     
-    train_f1 = f1_score(y_train, train_pred)
+    train_f1 = f1_score(y_train_fit, train_pred)
     test_f1 = f1_score(y_test, test_pred)
     
     gap = train_f1 - test_f1
@@ -866,11 +975,16 @@ if best_model_name in deployment_model_map:
     final_model_name = f"{best_model_name} (Regularized)"
     final_model = regularized_models[deployment_model_map[best_model_name]]
     print(f"\n Final Regularized Model Selected for Deployment: {final_model_name}")
+    print(f"  Balancing technique: {balance_method}")
+    print(f"  Training data: {X_train_fit.shape[0]} balanced samples")
 else:
     final_model = best_tuned_model
     final_model_name = best_model_name if best_model_name else best_tuned_model.__class__.__name__
     print(f"\n Final Model Selected for Deployment: {final_model_name}")
+    print(f"  Balancing technique: {balance_method}")
+    print(f"  Training data: {X_train_fit.shape[0]} balanced samples")
 
+print(f"  Test evaluation: {X_test_scaled.shape[0]} samples")
 final_model.fit(X_train_fit, y_train_fit)
 
 final_pred = final_model.predict(X_test_scaled)
@@ -1061,7 +1175,11 @@ model_data = {
     'label_encoders': label_encoders,
     'categorical_features': categorical_features,
     'numerical_features': numerical_features,
-    'balance_method': balance_method
+    'balance_method': balance_method,
+    'training_data_shape': X_train_fit.shape,
+    'test_data_shape': X_test_scaled.shape,
+    'class_distribution_train': y_train_fit.value_counts().to_dict(),
+    'class_distribution_test': y_test.value_counts().to_dict()
 }
 
 with open(os.path.join(output_dir, 'churn_prediction_model.pkl'), 'wb') as f:
@@ -1070,8 +1188,11 @@ with open(os.path.join(output_dir, 'churn_prediction_model.pkl'), 'wb') as f:
 print(" Model saved to: churn_prediction_model.pkl")
 
 # Save feature importance report
-feature_importance.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
-print(" Feature importance saved to: feature_importance_report.csv")
+if 'feature_importance' in locals():
+    feature_importance.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
+    print(" Feature importance saved to: feature_importance_report.csv")
+else:
+    print(" Feature importance report not available for the selected final model.")
 
 # Save model evaluation results
 results_df.to_csv(os.path.join(output_dir, 'model_evaluation_results.csv'), index=False)

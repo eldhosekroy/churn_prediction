@@ -311,6 +311,8 @@ def preprocess(candidate_profile, call_log, executive_profile):
     )
     df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].replace([np.inf, -np.inf], 0).fillna(0)
     df_candidate['Outstanding_Amount'] = df_candidate['Total_Amount'] - df_candidate['Paid_amount']
+    df_candidate['Zero_Payment'] = (df_candidate['Paid_amount'] == 0).astype(int)
+    df_candidate['Negative_Feedback'] = df_candidate['Feedback'].astype(str).str.strip().str.lower().eq('negative').astype(int)
 
     # ── Call Log Processing ──────────────────────
     call_log_proc = call_log.copy()
@@ -1089,8 +1091,10 @@ def page_live_predictor(df, model_data, churn_full=None):
     label_encoders  = model_data['label_encoders']
     categorical_feat= model_data['categorical_features']
     numerical_feat  = model_data['numerical_features']
+    balance_method  = model_data.get('balance_method', 'none')
 
     st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
+    st.markdown(f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1161,7 +1165,7 @@ def page_live_predictor(df, model_data, churn_full=None):
             st.number_input("Call Frequency (per month)", value=0.0, disabled=True, key="p_cf_disabled")
             call_freq = 0.0
         else:
-            call_freq = st.number_input("Call Frequency (per month)", 0.0, 0.5, 0.18, step=0.01, key="p_cf")
+            call_freq = st.number_input("Call Frequency (per month)", 0.0, 30.0, 0.18, step=0.01, key="p_cf")
 
         exec_exp = st.number_input("Avg Executive Experience (yrs)", 0.0, 10.0, 5.0, step=0.5, key="p_ee")
 
@@ -1217,6 +1221,9 @@ def page_live_predictor(df, model_data, churn_full=None):
             'Total_Amount':        total_amount,
             'Paid_amount':         paid_amount,
             'Payment_Ratio':       payment_ratio,
+            'Zero_Payment':        int(paid_amount == 0),
+            'Negative_Feedback':   int(str(feedback).strip().lower() == 'negative'),
+            'High_Risk_Indicator': int((paid_amount == 0) and (str(feedback).strip().lower() == 'negative')),
             'Days_Since_Induction': 30,
             'Days_Since_Payment':  days_since_payment,
             'Total_Calls':         total_calls,
