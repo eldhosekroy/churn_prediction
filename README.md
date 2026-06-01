@@ -1,5 +1,6 @@
 # ChurnSense AI – Candidate Analytics
 
+
 ChurnSense AI is an AI-powered Candidate Churn Prediction & Reason Analysis Dashboard. It leverages machine learning to proactively identify candidates at risk of dropping out (churning) during or before their training/induction sessions. 
 
 The system analyzes candidate profiles, payment histories, and executive call logs to identify churn risks, highlight key drivers (like skipping induction or lack of call engagement), and provide actionable recommendations.
