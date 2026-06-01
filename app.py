@@ -22,7 +22,7 @@ import os
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="ChurnSense AI – Candidate Analytics",
-    page_icon="🎯",
+    page_icon="https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/bullseye.svg",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -33,6 +33,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
@@ -211,11 +212,20 @@ st.markdown("""
     }
 
     /* Input fields */
+    .stSelectbox label p, .stNumberInput label p, .stTextInput label p {
+        color: #a78bfa !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 4px;
+    }
     .stSelectbox > div, .stNumberInput > div, .stTextInput > div {
-        background: rgba(30,30,60,0.7) !important;
-        border-color: rgba(99,102,241,0.3) !important;
-        border-radius: 10px !important;
+        background: rgba(15, 12, 41, 0.5) !important;
+        border: 1px solid rgba(99,102,241,0.4) !important;
+        border-radius: 8px !important;
         color: #e2e8f0 !important;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
     }
 
     /* Metric delta */
@@ -439,7 +449,7 @@ def sidebar():
     with st.sidebar:
         st.markdown("""
         <div style="text-align:center; padding: 20px 0 10px 0;">
-            <div style="font-size:40px;">🎯</div>
+            <div style="font-size:40px;"><i class="fa-solid fa-bullseye" style="color:#a78bfa;"></i></div>
             <div style="font-size:18px; font-weight:800; color:#e2e8f0; margin-top:8px;">ChurnSense AI</div>
             <div style="font-size:11px; color:#64748b; margin-top:4px;">Candidate Analytics Platform</div>
         </div>
@@ -448,12 +458,12 @@ def sidebar():
 
         page = st.radio(
             "Navigate",
-            ["📊 Overview",
-             "🔍 Candidate Explorer",
-             "📞 Call Log Analysis",
-             "💰 Payment Analysis",
-             "🤖 Live Predictor",
-             "📈 Model Performance"],
+            ["Overview",
+             "Candidate Explorer",
+             "Call Log Analysis",
+             "Payment Analysis",
+             "Live Predictor",
+             "Model Performance"],
             label_visibility="collapsed"
         )
 
@@ -461,10 +471,10 @@ def sidebar():
         st.markdown("<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>", unsafe_allow_html=True)
 
         _src = [
-            ("📋", "Candidate Profile", ".csv &nbsp;·&nbsp; 50 rows"),
-            ("📞", "Call Log",           ".csv &nbsp;·&nbsp; 124 rows"),
-            ("👔", "Executive Profile",  ".csv &nbsp;·&nbsp; 10 rows"),
-            ("🤖", "Churn Model",        ".pkl &nbsp;·&nbsp; Saved Model"),
+            ("<i class='fa-solid fa-clipboard-list'></i>", "Candidate Profile", ".csv &nbsp;·&nbsp; 50 rows"),
+            ("<i class='fa-solid fa-phone'></i>", "Call Log",           ".csv &nbsp;·&nbsp; 124 rows"),
+            ("<i class='fa-solid fa-user-tie'></i>", "Executive Profile",  ".csv &nbsp;·&nbsp; 10 rows"),
+            ("<i class='fa-solid fa-robot'></i>", "Churn Model",        ".pkl &nbsp;·&nbsp; Saved Model"),
         ]
         for _icon, _name, _meta in _src:
             st.markdown(f"""
@@ -481,7 +491,7 @@ def sidebar():
         st.markdown("""
 <div style="background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.2);
             border-radius:9px;padding:8px 12px;margin-top:4px;overflow:hidden;">
-  <span style="font-size:13px;vertical-align:middle;">&#128737;&#65039;</span>
+  <span style="font-size:13px;vertical-align:middle;"><i class="fa-solid fa-tools"></i></span>
   <span style="font-size:10px;color:#64748b;vertical-align:middle;margin-left:6px;">
     <b style="color:#34d399;">Read-only</b> &mdash; no team files modified
   </span>
@@ -497,7 +507,7 @@ def sidebar():
 def page_overview(df, call_log_proc, churn_full=None):
     st.markdown("""
     <div class="page-header">
-        <h1>📊 Executive Overview</h1>
+        <h1><i class="fa-solid fa-chart-pie"></i> Executive Overview</h1>
         <p>Real-time snapshot of candidate churn status, sources, and engagement metrics.</p>
     </div>
     """, unsafe_allow_html=True)
@@ -514,7 +524,7 @@ def page_overview(df, call_log_proc, churn_full=None):
     with c1:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-icon">👥</div>
+            <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
             <div class="kpi-title">Total Candidates</div>
             <div class="kpi-value kpi-blue" style="color:#60a5fa">{total}</div>
             <div class="kpi-sub">Enrolled in system</div>
@@ -522,7 +532,7 @@ def page_overview(df, call_log_proc, churn_full=None):
     with c2:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-icon">✅</div>
+            <div class="kpi-icon"><i class="fa-solid fa-check-circle" style="color:#34d399"></i></div>
             <div class="kpi-title">Active</div>
             <div class="kpi-value" style="color:#34d399">{active}</div>
             <div class="kpi-sub">Training joined</div>
@@ -530,7 +540,7 @@ def page_overview(df, call_log_proc, churn_full=None):
     with c3:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-icon">⚠️</div>
+            <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i></div>
             <div class="kpi-title">Churned</div>
             <div class="kpi-value" style="color:#f87171">{int(churned)}</div>
             <div class="kpi-sub">Did not join training</div>
@@ -538,7 +548,7 @@ def page_overview(df, call_log_proc, churn_full=None):
     with c4:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-icon">📉</div>
+            <div class="kpi-icon"><i class="fa-solid fa-chart-line" style="color:#fbbf24"></i></div>
             <div class="kpi-title">Churn Rate</div>
             <div class="kpi-value" style="color:#fbbf24">{churn_rate:.1f}%</div>
             <div class="kpi-sub">Of all candidates</div>
@@ -546,7 +556,7 @@ def page_overview(df, call_log_proc, churn_full=None):
     with c5:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-icon">📞</div>
+            <div class="kpi-icon"><i class="fa-solid fa-phone" style="color:#a78bfa"></i></div>
             <div class="kpi-title">Total Calls</div>
             <div class="kpi-value" style="color:#a78bfa">{total_calls}</div>
             <div class="kpi-sub">Across all candidates</div>
@@ -665,13 +675,13 @@ def page_overview(df, call_log_proc, churn_full=None):
 def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=None):
     st.markdown("""
     <div class="page-header">
-        <h1>🔍 Candidate Explorer</h1>
+        <h1><i class="fa-solid fa-magnifying-glass"></i> Candidate Explorer</h1>
         <p>Browse, filter, and inspect individual candidate records with call history.</p>
     </div>
     """, unsafe_allow_html=True)
 
     # ── Filters ───────────────────────────────────
-    with st.expander("🎛️ Filter Candidates", expanded=True):
+    with st.expander("Filter Candidates", expanded=True):
         f1, f2, f3, f4, f5 = st.columns(5)
         with f1:
             sel_churn = st.selectbox("Churn Status", ["All", "Churned", "Active"], key="f_churn")
@@ -709,7 +719,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
     display_cols = [c for c in display_cols if c in fdf.columns]
 
     tbl = fdf[display_cols].copy()
-    tbl['Churn'] = tbl['Churn'].map({0: '✅ Active', 1: '🔴 Churned'})
+    tbl['Churn'] = tbl['Churn'].map({0: 'Active', 1: 'Churned'})
     if 'Payment_Ratio' in tbl.columns:
         tbl['Payment_Ratio'] = (tbl['Payment_Ratio'] * 100).round(1).astype(str) + '%'
 
@@ -742,7 +752,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
         row = fdf[fdf['Candidate_ID'] == sel_id].iloc[0]
     calls  = call_log_proc[call_log_proc['Candidate_ID'] == sel_id].copy()
 
-    churn_label = "🔴 CHURNED" if row['Churn'] == 1 else "✅ ACTIVE"
+    churn_label = "CHURNED" if row['Churn'] == 1 else "ACTIVE"
     churn_color = "#f87171" if row['Churn'] == 1 else "#34d399"
 
     pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
@@ -808,7 +818,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
 def page_call_analysis(df, call_log_proc, executive_profile):
     st.markdown("""
     <div class="page-header">
-        <h1>📞 Call Log Analysis</h1>
+        <h1><i class="fa-solid fa-phone"></i> Call Log Analysis</h1>
         <p>Understand call engagement patterns, executive performance, and sentiment signals.</p>
     </div>
     """, unsafe_allow_html=True)
@@ -823,22 +833,22 @@ def page_call_analysis(df, call_log_proc, executive_profile):
     avg_calls_per_cand = len(call_log_proc) / call_log_proc['Candidate_ID'].nunique()
 
     with k1:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">📞</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-phone" style="color:#a78bfa"></i></div>
             <div class="kpi-title">Total Calls</div>
             <div class="kpi-value" style="color:#60a5fa">{len(call_log_proc)}</div>
             <div class="kpi-sub">Across all candidates</div></div>""", unsafe_allow_html=True)
     with k2:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">⏱️</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-stopwatch"></i></div>
             <div class="kpi-title">Avg Duration</div>
             <div class="kpi-value" style="color:#a78bfa">{avg_dur:.1f} min</div>
             <div class="kpi-sub">Per call</div></div>""", unsafe_allow_html=True)
     with k3:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">🔄</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-rotate"></i></div>
             <div class="kpi-title">Avg Calls/Candidate</div>
             <div class="kpi-value" style="color:#34d399">{avg_calls_per_cand:.1f}</div>
             <div class="kpi-sub">Follow-up rate</div></div>""", unsafe_allow_html=True)
     with k4:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">📊</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-chart-simple"></i></div>
             <div class="kpi-title">Total Talk Time</div>
             <div class="kpi-value" style="color:#fbbf24">{total_dur:.0f} min</div>
             <div class="kpi-sub">Combined duration</div></div>""", unsafe_allow_html=True)
@@ -874,7 +884,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
         st.plotly_chart(fig2, use_container_width=True)
 
     # ── Sentiment Keywords ─────────────────────────
-    st.markdown('<div class="section-header"><h2>📝 Call Remark Sentiment Keywords</h2></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h2><i class="fa-solid fa-clipboard"></i> Call Remark Sentiment Keywords</h2></div>', unsafe_allow_html=True)
 
     col3, col4 = st.columns([1.5, 1])
 
@@ -906,7 +916,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
     with col4:
         st.markdown('<div class="section-header"><h2>Remark Signal Summary</h2></div>', unsafe_allow_html=True)
         for sig, active_val, churn_val in zip(
-            ['🟢 Interested', '🔴 No Response', '💰 Payment Talk', '💡 Technical Talk'],
+            ['<i class="fa-solid fa-circle-check" style="color:#34d399"></i> Interested', '<i class="fa-solid fa-circle-xmark" style="color:#f87171"></i> No Response', '<i class="fa-solid fa-sack-dollar" style="color:#fbbf24"></i> Payment Talk', '<i class="fa-solid fa-lightbulb" style="color:#a78bfa"></i> Technical Talk'],
             sentiment_data['Active'], sentiment_data['Churned']
         ):
             st.markdown(f"""
@@ -922,7 +932,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
             """, unsafe_allow_html=True)
 
     # ── Call Timeline ─────────────────────────────
-    st.markdown('<div class="section-header"><h2>📅 Call Activity Timeline</h2></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h2><i class="fa-solid fa-calendar-days"></i> Call Activity Timeline</h2></div>', unsafe_allow_html=True)
     timeline = call_log_proc.groupby(call_log_proc['Call_Date'].dt.date).size().reset_index()
     timeline.columns = ['Date', 'Calls']
     timeline['Date'] = pd.to_datetime(timeline['Date'])
@@ -948,7 +958,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
 def page_payment_analysis(df):
     st.markdown("""
     <div class="page-header">
-        <h1>💰 Payment Analysis</h1>
+        <h1><i class="fa-solid fa-money-bill-wave"></i> Payment Analysis</h1>
         <p>Fee collection status, payment methods, and financial risk by churn segment.</p>
     </div>
     """, unsafe_allow_html=True)
@@ -960,23 +970,23 @@ def page_payment_analysis(df):
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">💵</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-money-bill"></i></div>
             <div class="kpi-title">Total Expected</div>
             <div class="kpi-value" style="color:#60a5fa; font-size:26px;">₹{total_revenue/1e5:.2f}L</div>
             <div class="kpi-sub">Course fees total</div></div>""", unsafe_allow_html=True)
     with k2:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">✅</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-check-circle" style="color:#34d399"></i></div>
             <div class="kpi-title">Collected</div>
             <div class="kpi-value" style="color:#34d399; font-size:26px;">₹{collected/1e5:.2f}L</div>
             <div class="kpi-sub">{collection_rate:.1f}% collected</div></div>""", unsafe_allow_html=True)
     with k3:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">⚠️</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i></div>
             <div class="kpi-title">Outstanding</div>
             <div class="kpi-value" style="color:#f87171; font-size:26px;">₹{outstanding/1e5:.2f}L</div>
             <div class="kpi-sub">Pending recovery</div></div>""", unsafe_allow_html=True)
     with k4:
         churn_outstanding = df[df['Churn']==1]['Outstanding_Amount'].sum()
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">🚨</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-bell"></i></div>
             <div class="kpi-title">At-Risk Amount</div>
             <div class="kpi-value" style="color:#fbbf24; font-size:26px;">₹{churn_outstanding/1e5:.2f}L</div>
             <div class="kpi-sub">From churned candidates</div></div>""", unsafe_allow_html=True)
@@ -1063,13 +1073,13 @@ def page_payment_analysis(df):
 def page_live_predictor(df, model_data, churn_full=None):
     st.markdown("""
     <div class="page-header">
-        <h1>🤖 Live Churn Predictor</h1>
+        <h1><i class="fa-solid fa-robot"></i> Live Churn Predictor</h1>
         <p>Fill in candidate details to get an instant AI-powered churn risk assessment.</p>
     </div>
     """, unsafe_allow_html=True)
 
     if model_data is None:
-        st.error("⚠️ Could not load churn_prediction_model.pkl. Please ensure the model file is present in the project directory.")
+        st.error("Could not load churn_prediction_model.pkl. Please ensure the model file is present in the project directory.")
         return
 
     model           = model_data['model']
@@ -1115,23 +1125,66 @@ def page_live_predictor(df, model_data, churn_full=None):
 
     cc1, cc2, cc3, cc4 = st.columns(4)
     with cc1:
-        total_calls     = st.number_input("Total Calls", 0, 5, 1, key="p_tc")
-        unique_execs    = st.number_input("Unique Executives", 0, 3, 1, key="p_ue")
+        total_calls = st.number_input("Total Calls", 0, 5, 1, key="p_tc")
+        if total_calls == 0:
+            st.number_input("Unique Executives", value=0, disabled=True, key="p_ue_disabled")
+            unique_execs = 0
+        else:
+            unique_execs = st.number_input("Unique Executives", 1, 3, 1, key="p_ue")
+
     with cc2:
-        total_call_dur  = st.number_input("Total Call Duration (min)", 0.0, 30.0, 8.0, step=0.5, key="p_tcd")
-        avg_call_dur    = st.number_input("Avg Call Duration (min)",   0.0,  10.0, 4.0, step=0.5, key="p_acd")
+        if total_calls == 0:
+            st.number_input("Total Call Duration (min)", value=0.0, disabled=True, key="p_tcd_disabled")
+            total_call_dur = 0.0
+        else:
+            total_call_dur = st.number_input("Total Call Duration (min)", 0.0, 30.0, 8.0, step=0.5, key="p_tcd")
+
+        if total_calls <= 1:
+            st.number_input("Avg Call Duration (min)", value=float(total_call_dur), disabled=True, key="p_acd_disabled")
+            avg_call_dur = total_call_dur
+        else:
+            avg_call_dur = st.number_input("Avg Call Duration (min)", 0.0, 30.0, 4.0, step=0.5, key="p_acd")
+
     with cc3:
-        max_call_dur    = st.number_input("Max Call Duration (min)",   0.0,  15.0, 6.0, step=0.5, key="p_mxcd")
-        min_call_dur    = st.number_input("Min Call Duration (min)",   0.0,   8.0, 2.0, step=0.5, key="p_mncd")
+        if total_calls <= 1:
+            st.number_input("Max Call Duration (min)", value=float(total_call_dur), disabled=True, key="p_mxcd_disabled")
+            max_call_dur = total_call_dur
+            st.number_input("Min Call Duration (min)", value=float(total_call_dur), disabled=True, key="p_mncd_disabled")
+            min_call_dur = total_call_dur
+        else:
+            max_call_dur = st.number_input("Max Call Duration (min)", 0.0, 30.0, 6.0, step=0.5, key="p_mxcd")
+            min_call_dur = st.number_input("Min Call Duration (min)", 0.0, 30.0, 2.0, step=0.5, key="p_mncd")
+
     with cc4:
-        call_freq       = st.number_input("Call Frequency (per month)", 0.0, 0.5, 0.18, step=0.01, key="p_cf")
-        exec_exp        = st.number_input("Avg Executive Experience (yrs)", 0.0, 10.0, 5.0, step=0.5, key="p_ee")
+        if total_calls == 0:
+            st.number_input("Call Frequency (per month)", value=0.0, disabled=True, key="p_cf_disabled")
+            call_freq = 0.0
+        else:
+            call_freq = st.number_input("Call Frequency (per month)", 0.0, 0.5, 0.18, step=0.01, key="p_cf")
+
+        exec_exp = st.number_input("Avg Executive Experience (yrs)", 0.0, 10.0, 5.0, step=0.5, key="p_ee")
 
     sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1: has_interest    = st.checkbox("Showed Interest in Calls", value=True, key="p_hi")
-    with sc2: has_no_resp     = st.checkbox("No Response / Unreachable", value=False, key="p_hnr")
-    with sc3: has_payment     = st.checkbox("Payment Discussion in Calls", value=False, key="p_hpd")
-    with sc4: has_technical   = st.checkbox("Technical Discussion", value=True, key="p_htd")
+    with sc1:
+        if total_calls == 0:
+            has_interest = st.checkbox("Showed Interest in Calls", value=False, disabled=True, key="p_hi_disabled")
+        else:
+            has_interest = st.checkbox("Showed Interest in Calls", value=True, key="p_hi")
+    with sc2:
+        if total_calls == 0:
+            has_no_resp = st.checkbox("No Response / Unreachable", value=False, disabled=True, key="p_hnr_disabled")
+        else:
+            has_no_resp = st.checkbox("No Response / Unreachable", value=False, key="p_hnr")
+    with sc3:
+        if total_calls == 0:
+            has_payment = st.checkbox("Payment Discussion in Calls", value=False, disabled=True, key="p_hpd_disabled")
+        else:
+            has_payment = st.checkbox("Payment Discussion in Calls", value=False, key="p_hpd")
+    with sc4:
+        if total_calls == 0:
+            has_technical = st.checkbox("Technical Discussion", value=False, disabled=True, key="p_htd_disabled")
+        else:
+            has_technical = st.checkbox("Technical Discussion", value=True, key="p_htd")
 
     # Free-text call remarks for live inference
     call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000, placeholder="Enter recent call remarks or notes...", key="p_remarks")
@@ -1142,7 +1195,7 @@ def page_live_predictor(df, model_data, churn_full=None):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("🔮 Predict Churn Risk", use_container_width=True, type="primary"):
+    if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
         payment_ratio = paid_amount / total_amount if total_amount > 0 else 0.0
 
         raw_input = {
@@ -1217,14 +1270,14 @@ def page_live_predictor(df, model_data, churn_full=None):
             if pred == 1:
                 st.markdown(f"""
                 <div class="prediction-box-churn">
-                    <div class="pred-label" style="color:#f87171;">🔴</div>
+                    <div class="pred-label" style="color:#f87171;"><i class="fa-solid fa-circle-xmark"></i></div>
                     <div style="font-size:24px; font-weight:800; color:#f87171; margin-bottom:8px;">HIGH CHURN RISK</div>
                     <div class="pred-sub">This candidate is likely to NOT join training</div>
                 </div>""", unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <div class="prediction-box-safe">
-                    <div class="pred-label" style="color:#34d399;">✅</div>
+                    <div class="pred-label" style="color:#34d399;"><i class="fa-solid fa-circle-check"></i></div>
                     <div style="font-size:24px; font-weight:800; color:#34d399; margin-bottom:8px;">LOW CHURN RISK</div>
                     <div class="pred-sub">This candidate is likely to join training</div>
                 </div>""", unsafe_allow_html=True)
@@ -1252,7 +1305,7 @@ def page_live_predictor(df, model_data, churn_full=None):
             st.plotly_chart(gauge, use_container_width=True)
 
         with r3:
-            risk_level = "🔴 High" if prob > 0.6 else ("🟡 Medium" if prob > 0.35 else "🟢 Low")
+            risk_level = "High" if prob > 0.6 else ("Medium" if prob > 0.35 else "Low")
             st.markdown(f"""
             <div class="candidate-card" style="margin-top:0;">
                 <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Risk Assessment</div>
@@ -1274,7 +1327,7 @@ def page_live_predictor(df, model_data, churn_full=None):
                 </div>
                 <hr style="border-color:rgba(99,102,241,0.2); margin:12px 0;">
                 <div style="font-size:12px; color:#64748b;">
-                    {'⚠️ <b style="color:#fbbf24;">Action Required:</b> Schedule immediate follow-up call.' if pred==1 else '✅ <b style="color:#34d399;">On Track:</b> Continue regular follow-up.'}
+                    {'<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Schedule immediate follow-up call.' if pred==1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Continue regular follow-up.'}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1321,13 +1374,13 @@ def page_live_predictor(df, model_data, churn_full=None):
 def page_model_performance(df, model_data):
     st.markdown("""
     <div class="page-header">
-        <h1>📈 Model Performance</h1>
+        <h1><i class="fa-solid fa-chart-line"></i> Model Performance</h1>
         <p>Evaluation metrics, feature importance, and model comparison for the churn prediction model.</p>
     </div>
     """, unsafe_allow_html=True)
 
     if model_data is None:
-        st.error("⚠️ Model file not found.")
+        st.error("Model file not found.")
         return
 
     model           = model_data['model']
@@ -1360,29 +1413,29 @@ def page_model_performance(df, model_data):
     st.markdown('<div class="section-header"><h2>Model Information</h2></div>', unsafe_allow_html=True)
     i1, i2, i3, i4, i5 = st.columns(5)
     with i1:
-        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\">🤖</div>
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-robot"></i></div>
             <div class=\"kpi-title\">Algorithm</div>
             <div class=\"kpi-value\" style=\"color:#a78bfa; font-size:16px; margin-top:8px;\">{friendly_model}</div>
             <div class=\"kpi-sub\">Deployed model</div></div>""", unsafe_allow_html=True)
     with i2:
         estimator_value = getattr(model,'n_estimators', None) or getattr(model,'n_estimators_', 'N/A')
-        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\">🌳</div>
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-tree"></i></div>
             <div class=\"kpi-title\">Estimators</div>
             <div class=\"kpi-value\" style=\"color:#60a5fa;\">{estimator_value}</div>
             <div class=\"kpi-sub\">Decision trees</div></div>""", unsafe_allow_html=True)
     with i3:
         max_depth_value = getattr(model,'max_depth', 'N/A')
-        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\">📐</div>
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-ruler-combined"></i></div>
             <div class=\"kpi-title\">Max Depth</div>
             <div class=\"kpi-value\" style=\"color:#34d399;\">{max_depth_value}</div>
             <div class=\"kpi-sub\">Tree depth limit</div></div>""", unsafe_allow_html=True)
     with i4:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">🔢</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-hashtag"></i></div>
             <div class="kpi-title">Features Used</div>
             <div class="kpi-value" style="color:#fbbf24;">{len(feature_columns)}</div>
             <div class="kpi-sub">Input dimensions</div></div>""", unsafe_allow_html=True)
     with i5:
-        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon">⚖️</div>
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-scale-balanced"></i></div>
             <div class="kpi-title">Balancing</div>
             <div class="kpi-value" style="color:#fbbf24; font-size:16px; margin-top:8px;">{balance_label}</div>
             <div class="kpi-sub">Imbalance handling</div></div>""", unsafe_allow_html=True)
@@ -1444,7 +1497,7 @@ def page_model_performance(df, model_data):
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Churn Reason Analysis ─────────────────────
-    st.markdown('<div class="section-header"><h2>📋 Why Are Candidates Churning? — Reason Analysis</h2></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h2><i class="fa-solid fa-clipboard-list"></i> Why Are Candidates Churning? — Reason Analysis</h2></div>', unsafe_allow_html=True)
 
     churned_df = df[df['Churn'] == 1].copy()
     active_df  = df[df['Churn'] == 0].copy()
@@ -1454,7 +1507,7 @@ def page_model_performance(df, model_data):
     with r1:
         st.markdown("""
         <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;">🔴 Zero Payment</div>
+            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> Zero Payment</div>
         """, unsafe_allow_html=True)
         zero_pay = (churned_df['Paid_amount'] == 0).sum()
         pct = zero_pay / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -1467,7 +1520,7 @@ def page_model_performance(df, model_data):
     with r2:
         st.markdown("""
         <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;">📵 No Response Pattern</div>
+            <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;"><i class="fa-solid fa-phone-slash"></i> No Response Pattern</div>
         """, unsafe_allow_html=True)
         no_resp = churned_df.get('has_no_response', pd.Series([0]*len(churned_df))).sum() if 'has_no_response' in churned_df.columns else 0
         pct2 = no_resp / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -1480,7 +1533,7 @@ def page_model_performance(df, model_data):
     with r3:
         st.markdown("""
         <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#a78bfa; margin-bottom:12px;">🙅 Not Attended Induction</div>
+            <div style="font-size:13px; font-weight:700; color:#a78bfa; margin-bottom:12px;"><i class="fa-solid fa-user-xmark"></i> Not Attended Induction</div>
         """, unsafe_allow_html=True)
         not_attended = (churned_df['Induction_Session'] == 'NotAttended').sum() if 'Induction_Session' in churned_df.columns else 0
         pct3 = not_attended / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -1491,7 +1544,7 @@ def page_model_performance(df, model_data):
         </div>""", unsafe_allow_html=True)
 
     # ── Model Comparison Table (from model.py's logic) ──
-    st.markdown('<div class="section-header"><h2>🏆 Algorithm Comparison (Reference)</h2></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h2><i class="fa-solid fa-trophy"></i> Algorithm Comparison (Reference)</h2></div>', unsafe_allow_html=True)
 
     model_names = ['Random Forest (Regularized)', 'Gradient Boosting (Regularized)',
                    'XGBoost (Regularized)', 'Random Forest', 'Gradient Boosting',
@@ -1503,7 +1556,7 @@ def page_model_performance(df, model_data):
     notes = []
     for name in model_names:
         if name == selected_model:
-            notes.append('✅ Selected')
+            notes.append('Selected')
         elif 'Regularized' in name:
             notes.append('Tuned')
         else:
@@ -1536,7 +1589,7 @@ def main():
             df, call_log_proc = preprocess(candidate_profile, call_log, executive_profile)
             churn_full, churn_short = load_churn_reasons()
         except FileNotFoundError as e:
-            st.error(f"⚠️ Could not load data files: {e}\n\nPlease ensure the CSV files are in the same directory as dashboard.py.")
+            st.error(f"Could not load data files: {e}\n\nPlease ensure the CSV files are in the same directory as dashboard.py.")
             st.stop()
 
     model_path = os.path.join(DATA_DIR, "churn_prediction_model.pkl")
