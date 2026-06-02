@@ -1238,22 +1238,28 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
     if not api_key:
         return {'status': 'Gemini unavailable', 'error': 'API key missing'}
 
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-    if not model_name.startswith('models/') and not model_name.startswith('projects/'):
-        model_name = gal.TextServiceClient.model_path(model_name)
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+    #if not model_name.startswith('models/') and not model_name.startswith('projects/'):
+    #    model_name = gal.TextServiceClient.model_path(model_name)
+    clean_model_name = model_name
+    if clean_model_name.startswith('models/'):
+        clean_model_name = clean_model_name[len('models/'):]
 
     prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
 
     try:
         genai.configure(api_key=api_key, transport='rest')
-        client = gal.TextServiceClient(client_options={'api_key': api_key})
+        #client = gal.TextServiceClient(client_options={'api_key': api_key})
+        client = genai.GenerativeModel(clean_model_name)
         prompt_obj = gal.TextPrompt(text=prompt)
         request = gal.GenerateTextRequest(
-            model=model_name,
+            model=clean_model_name,
             prompt=prompt_obj,
             max_output_tokens=128
         )
-        response = client.generate_text(request=request, timeout=20)
+        response = client.generate_content(prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"))
         text = None
         if getattr(response, 'candidates', None):
             first_candidate = response.candidates[0]
