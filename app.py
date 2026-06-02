@@ -102,11 +102,13 @@ def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_
         details.append(f"- Call transcript: {transcript_text}")
 
     prompt = (
-        "You are an AI assistant that reads candidate information and call context to provide a churn reason and a short retention recommendation. "
-        "Respond only with a JSON object containing keys: reason, recommendation. "
-        "Choose one churn reason from: Financial issues, Lack of interest, Joined another institution, Communication gaps, Other. "
-        "Use the candidate details and call details to determine the most likely reason.\n\n"
-        + '\n'.join(details)
+            "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
+            "Your task is to analyze candidate profile details and communication logs context to formulate a highly detailed, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
+            "Value of the 'reason' key in the output JSON MUST be a comprehensive, detailed sentence or paragraph explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, call logs, and remarks.\n"
+            "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
+            "Strict Format Constraint:\n"
+            "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
+            "Candidate Data context:\n" + "\n".join(details)
     )
     return prompt
 
@@ -116,7 +118,7 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
     if not api_key:
         return {'status': 'Gemini unavailable', 'error': 'API key missing'}
 
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
     #project_name = os.getenv('PROJECT_NAME')
     #if not model_name.startswith('models/') and not model_name.startswith('projects/'):
     #    if project_name:
@@ -128,46 +130,94 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
     if clean_model_name.startswith('models/'):
         clean_model_name = clean_model_name[len('models/'):]
 
+    # If a prohibited/legacy model is specified, fall back to the modern gemini-2.5-flash
+    if any(m in clean_model_name.lower() for m in ['1.5-flash', '1.5-pro', 'gemini-pro', '2.0-flash', '2.0-pro']):
+        clean_model_name = 'gemini-2.5-flash'
+
     prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
 
-    try:
-        genai.configure(api_key=api_key, transport='rest')
+    #try:
+    #    genai.configure(api_key=api_key, transport='rest')
         # client = gal.TextServiceClient(client_options={'api_key': api_key})
-        client = genai.GenerativeModel(clean_model_name)
-        prompt_obj = gal.TextPrompt(text=prompt)
-        request = gal.GenerateTextRequest(
-            model=clean_model_name,
-            prompt=prompt_obj,
-            max_output_tokens=128
-        )
-        response = client.generate_content(prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json"))
-        text = None
-        if getattr(response, 'candidates', None):
-            first_candidate = response.candidates[0]
-            text = getattr(first_candidate, 'output', None)
-            if text is None:
-                text = str(first_candidate)
+    #    client = genai.GenerativeModel(clean_model_name)
+    #    prompt_obj = gal.TextPrompt(text=prompt)
+    #    request = gal.GenerateTextRequest(
+    #        model=clean_model_name,
+    #        prompt=prompt_obj,
+    #        max_output_tokens=128
+    #    )
+    #    response = client.generate_content(prompt,
+    #        generation_config=genai.GenerationConfig(
+    #            response_mime_type="application/json"))
+    #    text = None
+    #    if getattr(response, 'candidates', None):
+    #        first_candidate = response.candidates[0]
+    #        text = getattr(first_candidate, 'output', None)
+    #        if text is None:
+    #            text = str(first_candidate)
 
-        if not text:
-            return {'status': 'Fallback heuristic', 'error': 'Empty Gemini response'}
+    #    if not text:
+    #        return {'status': 'Fallback heuristic', 'error': 'Empty Gemini response'}
 
-        parsed = parse_json_like(text)
-        if parsed is None:
-            parsed = {}
-            lines = [line.strip() for line in str(text).splitlines() if line.strip()]
-            for line in lines:
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    parsed[key.strip().lower()] = value.strip()
 
-        reason = normalize_reason_label(parsed.get('reason') or parsed.get('reason_label') or text)
-        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-        return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
-    except Exception as e:
-        return {'status': 'Fallback heuristic', 'error': str(e)}
+    #    parsed = parse_json_like(text)
+    #    if parsed is None:
+    #        parsed = {}
+    #        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+    #        for line in lines:
+    #            if ':' in line:
+    #                key, value = line.split(':', 1)
+    #                parsed[key.strip().lower()] = value.strip()
 
+    #    reason = normalize_reason_label(parsed.get('reason') or parsed.get('reason_label') or text)
+    #    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+    #   return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
+    #except Exception as e:
+    #    return {'status': 'Fallback heuristic', 'error': str(e)}
+    import time
+    last_err = None
+    response_text = None
+
+    # Implement exponential backoff retries to combat transient 503 errors
+    for attempt in range(1, 4):
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(clean_model_name)
+
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            response_text = response.text
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+
+    if last_err:
+        return {'status': 'Fallback heuristic', 'error': str(last_err)}
+
+    if not response_text:
+        return {'status': 'Fallback heuristic', 'error': 'Empty response from model'}
+
+    raw_text = response_text.strip()
+    if raw_text.startswith("```"):
+        lines = raw_text.splitlines()
+        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+            raw_text = "\n".join(lines[1:-1])
+
+    parsed = parse_json_like(raw_text)
+    if parsed is None:
+        parsed = {}
+
+    # Extract detailed reason directly, do not map it into a 1-word label here
+    reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+    return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
 
 def heuristic_recommendation(reason_label):
     mapping = {
@@ -193,19 +243,34 @@ def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_tex
         text += str(feedback_text).lower()
 
     if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
-        reason = 'Financial issues'
-    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
-        reason = 'Lack of interest'
-    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
-        reason = 'Joined another institution'
-    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
-        reason = 'Communication gaps'
-    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
-        reason = 'Lack of interest'
+        reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
+        label_key = 'Financial issues'
+    elif any(k in text for k in
+             ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested',
+              'no longer interested']):
+        reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+        label_key = 'Lack of interest'
+    elif any(k in text for k in
+             ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute',
+              'joined company', 'enrolled elsewhere']):
+        reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
+        label_key = 'Joined another institution'
+    elif any(k in text for k in
+             ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer',
+              'call dropped', 'busy', 'no contact', 'not responding']):
+        reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
+        label_key = 'Communication gaps'
+    elif any(
+            k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+        reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+        label_key = 'Lack of interest'
     else:
-        reason = 'Other'
+        reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
+        label_key = 'Other'
 
-    return reason, heuristic_recommendation(reason), f'Fallback heuristic ({error_context})'
+    return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
+
+    #return reason, heuristic_recommendation(reason), f'Fallback heuristic ({error_context})'
 
 
 # ─────────────────────────────────────────────
@@ -761,8 +826,12 @@ def page_overview(df, call_log_proc, churn_full=None):
     # ── Top Suggested Churn Reasons (from model outputs) ─────────
     if churn_full is not None and 'Suggested_Churn_Reason' in churn_full.columns:
         try:
-            reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].value_counts().reset_index()
+            mapped_reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].dropna().astype(str).apply(
+                normalize_reason_label)
+            reasons = mapped_reasons.value_counts().reset_index()
             reasons.columns = ['Reason', 'Count']
+            #reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].value_counts().reset_index()
+            #reasons.columns = ['Reason', 'Count']
             if not reasons.empty:
                 st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>', unsafe_allow_html=True)
                 fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count', color_continuous_scale=['#f87171','#fbbf24','#60a5fa'])
