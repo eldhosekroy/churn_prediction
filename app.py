@@ -16,13 +16,13 @@ from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
 
-try:
-    import requests
-except ImportError:
-    requests = None
-
+from dotenv import load_dotenv
+import google.generativeai as genai
+from google.ai import generativelanguage_v1beta as gal
 import json
 import os
+
+load_dotenv()
 
 
 def parse_gemini_response(response_data):
@@ -112,39 +112,44 @@ def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_
 
 
 def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    if requests is None:
-        return {'status': 'Gemini unavailable', 'error': 'requests library not installed'}
-
-    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('OPENAI_API_KEY')
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY') or os.getenv('OPENAI_API_KEY')
     if not api_key:
         return {'status': 'Gemini unavailable', 'error': 'API key missing'}
 
-    api_url = os.getenv('GEMINI_API_URL', 'https://api.openai.com/v1/responses')
     model_name = os.getenv('GEMINI_MODEL', 'gemini-1.5-mini')
+    project_name = os.getenv('PROJECT_NAME')
+    if not model_name.startswith('models/') and not model_name.startswith('projects/'):
+        if project_name:
+            model_name = f"{project_name}/models/{model_name}"
+        else:
+            model_name = gal.TextServiceClient.model_path(model_name)
 
     prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
-    }
-    payload = {
-        'model': model_name,
-        'input': prompt,
-        'max_output_tokens': 128
-    }
 
     try:
-        response = requests.post(api_url, headers=headers, json=payload, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-        text = parse_gemini_response(data)
+        genai.configure(api_key=api_key, transport='rest')
+        client = gal.TextServiceClient(client_options={'api_key': api_key})
+        prompt_obj = gal.TextPrompt(text=prompt)
+        request = gal.GenerateTextRequest(
+            model=model_name,
+            prompt=prompt_obj,
+            max_output_tokens=128
+        )
+        response = client.generate_text(request=request, timeout=20)
+        text = None
+        if getattr(response, 'candidates', None):
+            first_candidate = response.candidates[0]
+            text = getattr(first_candidate, 'output', None)
+            if text is None:
+                text = str(first_candidate)
+
         if not text:
             return {'status': 'Fallback heuristic', 'error': 'Empty Gemini response'}
 
         parsed = parse_json_like(text)
         if parsed is None:
             parsed = {}
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            lines = [line.strip() for line in str(text).splitlines() if line.strip()]
             for line in lines:
                 if ':' in line:
                     key, value = line.split(':', 1)
