@@ -1268,7 +1268,7 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
     response_text = None
 
     # Implement a resilient exponential backoff retry mechanism to automatically handle temporary overloads (e.g., 503)
-    for attempt in range(1, 4):
+    for attempt in range(1, 10):
         try:
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(clean_model_name)
