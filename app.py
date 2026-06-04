@@ -288,7 +288,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
     @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
     html, body, [class*="css"] {
@@ -301,7 +301,9 @@ st.markdown("""
     }
 
     /* Hide default streamlit header */
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer { visibility: hidden; }
+    header { background-color: transparent !important; }
+    .stDeployButton, .stAppDeployButton { display: none !important; }
 
     /* Sidebar */
     [data-testid="stSidebar"] {
@@ -707,12 +709,15 @@ PALETTE      = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#3b
 def sidebar():
     with st.sidebar:
         st.markdown("""
-        <div style="text-align:center; padding: 20px 0 10px 0;">
-            <div style="font-size:40px;"><i class="fa-solid fa-bullseye" style="color:#a78bfa;"></i></div>
-            <div style="font-size:18px; font-weight:800; color:#e2e8f0; margin-top:8px;">ChurnSense AI</div>
-            <div style="font-size:11px; color:#64748b; margin-top:4px;">Candidate Analytics Platform</div>
+        <div style="text-align:center; padding: 25px 0 20px 0; background: linear-gradient(180deg, rgba(30,41,59,0.4) 0%, transparent 100%); border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 15px;">
+            <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
+                <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
+                <span style="font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
+            </div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+                Candidate Analytics
+            </div>
         </div>
-        <hr style="border-color:rgba(99,102,241,0.2); margin: 12px 0;">
         """, unsafe_allow_html=True)
 
         page = st.radio(
