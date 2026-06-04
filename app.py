@@ -1750,13 +1750,13 @@ def page_live_predictor(df, model_data, churn_full=None):
         )
 
         st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(255,255,255,0.06);'>"
-                    f"<b>Suggested Churn Reason:</b> {suggested_reason}<br>"
-                    f"<small style='color:#f8fafc;'>Extraction method: {extraction_method}</small>"
+                    f"<b><small style='color:#f8fafc;'>Suggested Churn Reason:</b> {suggested_reason}<br>"
+                    f"<small style='color:#94a3b8;'>Extraction method: {extraction_method}</small>"
                     f"</div>", unsafe_allow_html=True)
 
         if ai_recommendation:
             st.markdown(f"<div style='margin-top:12px; padding:14px; border-radius:10px; background:rgba(52,211,153,0.08);'>"
-                        f"<b>AI-Generated Recommendation:</b> {ai_recommendation}" 
+                        f"<b><small style='color:#f8fafc;'>AI-Generated Recommendation:</b> {ai_recommendation}" 
                         f"</div>", unsafe_allow_html=True)
 
 
