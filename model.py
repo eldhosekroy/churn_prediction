@@ -1400,7 +1400,7 @@ churned_candidates['Suggested_Reasons'] = churned_candidates.apply(extract_churn
 
 # Create detailed inspection dataframe
 df_with_remarks = churned_candidates[[
-    'Candidate_ID', 'Mail_ID', 'Mobile_Number', 'Source', 'Education',
+    'Candidate_ID', 'Source', 'Education',
     'Current_status', 'Total_Amount', 'Paid_amount', 'Payment_Ratio',
     'Total_Calls', 'Call_Frequency', 'has_no_response',
     'Induction_Session', 'Feedback', 'Churn', 'Suggested_Reasons'

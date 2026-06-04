@@ -120,8 +120,8 @@ def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_
 
     prompt = (
             "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
-            "Your task is to analyze candidate profile details and communication logs context to formulate a highly detailed, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
-            "Value of the 'reason' key in the output JSON MUST be a comprehensive, detailed sentence or paragraph explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, call logs, and remarks.\n"
+            "Your task is to analyze candidate profile details and communication logs context to formulate a concise, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
+            "Value of the 'reason' key in the output JSON MUST be a comprehensive, detailed sentence or maximum three sentences explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, and remarks.\n"
             "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
             "Strict Format Constraint:\n"
             "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
