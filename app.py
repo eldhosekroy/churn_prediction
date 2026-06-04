@@ -351,6 +351,20 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
+    /* Specifically style the Log Out button (last button in sidebar) */
+    [data-testid="stSidebar"] .stButton:last-of-type button {
+        background-color: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+        margin-top: 10px !important;
+    }
+    [data-testid="stSidebar"] .stButton:last-of-type button:hover {
+        background-color: rgba(239,68,68,0.1) !important;
+        border-color: rgba(239,68,68,0.3) !important;
+        color: #f87171 !important;
+    }
+
     /* KPI Cards */
     .kpi-card {
         background: #1a1d24;
@@ -858,8 +872,8 @@ def sidebar():
   </span>
 </div>""", unsafe_allow_html=True)
 
-        st.markdown("<hr style='border-color:rgba(255,255,255,0.2);margin:16px 0;'>", unsafe_allow_html=True)
-        if st.button("Log Out", icon=":material/logout:", use_container_width=True):
+        st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+        if st.button("Log Out", icon=":material/logout:", type="secondary", use_container_width=True):
             st.session_state.logged_in = False
             if "access_token" in st.session_state:
                 del st.session_state["access_token"]
