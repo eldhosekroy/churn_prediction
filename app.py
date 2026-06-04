@@ -317,10 +317,14 @@ st.markdown("""
         background: #0f1115;
     }
 
-    /* Hide default streamlit header */
+    /* Hide default streamlit header and reduce top padding */
     #MainMenu, footer { visibility: hidden; }
     header { background-color: transparent !important; }
     .stDeployButton, .stAppDeployButton { display: none !important; }
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+    }
 
     /* Sidebar */
     [data-testid="stSidebar"] {
@@ -328,9 +332,23 @@ st.markdown("""
         border-right: 1px solid rgba(255,255,255,0.05);
     }
 
-    [data-testid="stSidebar"] .stRadio label {
-        color: #e2e8f0 !important;
-        font-weight: 500;
+    /* Left align sidebar buttons to look like nav links */
+    [data-testid="stSidebar"] button {
+        justify-content: flex-start !important;
+        padding-left: 16px !important;
+    }
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        background-color: transparent !important;
+        border-color: transparent !important;
+        color: #94a3b8 !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background-color: rgba(255,255,255,0.05) !important;
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] button[kind="primary"] {
+        font-weight: 600 !important;
     }
 
     /* KPI Cards */
@@ -789,20 +807,26 @@ def sidebar():
         </div>
         """, unsafe_allow_html=True)
 
-        def nav_change():
-            st.session_state.show_profile = False
+        if "current_page" not in st.session_state:
+            st.session_state.current_page = "Overview"
 
-        page = st.radio(
-            "Navigate",
-            ["Overview",
-             "Candidate Explorer",
-             "Call Log Analysis",
-             "Payment Analysis",
-             "Live Predictor",
-             "Model Performance"],
-            label_visibility="collapsed",
-            on_change=nav_change
-        )
+        pages = [
+            ("Overview", ":material/dashboard:"),
+            ("Candidate Explorer", ":material/search:"),
+            ("Call Log Analysis", ":material/call:"),
+            ("Payment Analysis", ":material/payments:"),
+            ("Live Predictor", ":material/online_prediction:"),
+            ("Model Performance", ":material/insights:")
+        ]
+
+        for p_name, p_icon in pages:
+            btn_type = "primary" if st.session_state.current_page == p_name else "secondary"
+            if st.button(p_name, icon=p_icon, type=btn_type, use_container_width=True):
+                st.session_state.current_page = p_name
+                st.session_state.show_profile = False
+                st.rerun()
+
+        page = st.session_state.current_page
 
         st.markdown("<hr style='border-color:rgba(255,255,255,0.2);margin:16px 0;'>", unsafe_allow_html=True)
         st.markdown("<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>", unsafe_allow_html=True)
