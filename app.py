@@ -332,7 +332,10 @@ st.markdown("""
         border-right: 1px solid rgba(255,255,255,0.05);
     }
 
-    /* Left align sidebar buttons to look like nav links */
+    /* Left align sidebar buttons to look like nav links and reduce vertical gap */
+    [data-testid="stSidebar"] .stButton {
+        margin-bottom: -12px;
+    }
     [data-testid="stSidebar"] button {
         justify-content: flex-start !important;
         padding-left: 16px !important;
