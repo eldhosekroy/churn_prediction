@@ -21,8 +21,25 @@ import google.generativeai as genai
 from google.ai import generativelanguage_v1beta as gal
 import json
 import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
-load_dotenv()
+load_dotenv(override=True)
+
+url: str = os.environ.get("SUPABASE_URL", "")
+key: str = os.environ.get("SUPABASE_KEY", "")
+
+supabase: Client | None = None
+if url and key and url != "your-supabase-url":
+    try:
+        supabase = create_client(url, key)
+        if "access_token" in st.session_state and "refresh_token" in st.session_state:
+            try:
+                supabase.auth.set_session(st.session_state.access_token, st.session_state.refresh_token)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"Failed to initialize Supabase: {e}")
 
 
 def parse_gemini_response(response_data):
@@ -297,7 +314,7 @@ st.markdown("""
 
     /* Main background */
     .stApp {
-        background: linear-gradient(135deg, #0f0c29 0%, #141428 50%, #0d1b2a 100%);
+        background: #0f1115;
     }
 
     /* Hide default streamlit header */
@@ -307,8 +324,8 @@ st.markdown("""
 
     /* Sidebar */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a3e 0%, #0f0c29 100%);
-        border-right: 1px solid rgba(99,102,241,0.3);
+        background: #161b22;
+        border-right: 1px solid rgba(255,255,255,0.05);
     }
 
     [data-testid="stSidebar"] .stRadio label {
@@ -318,39 +335,38 @@ st.markdown("""
 
     /* KPI Cards */
     .kpi-card {
-        background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.1) 100%);
-        border: 1px solid rgba(99,102,241,0.3);
-        border-radius: 16px;
+        background: #1a1d24;
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
         padding: 24px 20px;
         text-align: center;
-        backdrop-filter: blur(10px);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
         margin-bottom: 8px;
     }
     .kpi-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 32px rgba(99,102,241,0.25);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
     .kpi-title {
         color: #94a3b8;
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 12px;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
         margin-bottom: 10px;
     }
     .kpi-value {
-        color: #e2e8f0;
-        font-size: 38px;
-        font-weight: 800;
+        color: #ffffff;
+        font-size: 36px;
+        font-weight: 700;
         line-height: 1;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
     }
     .kpi-sub {
-        font-size: 12px;
+        font-size: 13px;
         color: #64748b;
     }
-    .kpi-icon { font-size: 24px; margin-bottom: 8px; }
+    .kpi-icon { font-size: 24px; margin-bottom: 12px; color: #475569; }
     .kpi-red .kpi-value { color: #f87171; }
     .kpi-green .kpi-value { color: #34d399; }
     .kpi-blue .kpi-value { color: #60a5fa; }
@@ -358,72 +374,70 @@ st.markdown("""
 
     /* Section headers */
     .section-header {
-        background: linear-gradient(90deg, rgba(99,102,241,0.2) 0%, transparent 100%);
-        border-left: 4px solid #6366f1;
-        padding: 12px 20px;
-        border-radius: 0 12px 12px 0;
-        margin: 24px 0 16px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding: 0 0 8px 0;
+        margin: 32px 0 16px 0;
     }
     .section-header h2 {
         color: #e2e8f0;
-        font-size: 20px;
-        font-weight: 700;
+        font-size: 16px;
+        font-weight: 600;
         margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
 
     /* Page header */
     .page-header {
-        background: linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.15) 50%, rgba(6,182,212,0.1) 100%);
-        border: 1px solid rgba(99,102,241,0.25);
-        border-radius: 20px;
-        padding: 28px 32px;
-        margin-bottom: 24px;
+        padding: 0 0 24px 0;
+        margin-bottom: 32px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
     }
     .page-header h1 {
-        color: #fff;
-        font-size: 28px;
-        font-weight: 800;
-        margin: 0 0 6px 0;
-        background: linear-gradient(90deg, #a78bfa, #60a5fa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #ffffff;
+        font-size: 32px;
+        font-weight: 600;
+        margin: 0 0 8px 0;
+        letter-spacing: -0.5px;
     }
     .page-header p {
         color: #94a3b8;
         margin: 0;
-        font-size: 14px;
+        font-size: 15px;
     }
 
     /* Risk badges */
-    .badge-high { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.4); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .badge-medium { background: rgba(251,191,36,0.2); color: #fbbf24; border: 1px solid rgba(251,191,36,0.4); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .badge-low { background: rgba(52,211,153,0.2); color: #34d399; border: 1px solid rgba(52,211,153,0.4); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .badge-high { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge-medium { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge-low { background: rgba(52,211,153,0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.2); padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
 
     /* Candidate card */
     .candidate-card {
-        background: rgba(30,30,60,0.7);
-        border: 1px solid rgba(99,102,241,0.2);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
+        background: #1a1d24;
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 16px;
     }
 
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
-        background: rgba(15,12,41,0.8);
-        border-radius: 12px;
-        padding: 4px;
-        gap: 4px;
+        background: transparent;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        gap: 24px;
+        padding: 0;
     }
     .stTabs [data-baseweb="tab"] {
-        color: #64748b;
-        border-radius: 10px;
+        color: #94a3b8;
         font-weight: 500;
-        padding: 8px 20px;
+        padding: 12px 4px;
+        border: none;
+        background: transparent;
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
-        color: #fff !important;
+        color: #ffffff !important;
+        background: transparent !important;
+        border-bottom: 2px solid #38bdf8 !important;
     }
 
     /* Dataframe */
@@ -465,7 +479,7 @@ st.markdown("""
         transition: all 0.2s;
     }
     .nav-item.active, .nav-item:hover {
-        background: rgba(99,102,241,0.2);
+        background: rgba(255,255,255,0.2);
         color: #a78bfa;
     }
 
@@ -480,7 +494,7 @@ st.markdown("""
     }
     .stSelectbox > div, .stNumberInput > div, .stTextInput > div {
         background: rgba(15, 12, 41, 0.5) !important;
-        border: 1px solid rgba(99,102,241,0.4) !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
         border-radius: 8px !important;
         color: #e2e8f0 !important;
         box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
@@ -706,6 +720,61 @@ PALETTE      = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#3b
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
+def page_auth():
+    st.markdown("<div style='text-align:center; padding:50px 0;'>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 42px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
+            <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
+            <span style="font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
+        </div>
+        <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+            Executive Portal
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if supabase is None:
+        st.error("Supabase credentials not configured. Please check your `.env` file.", icon=":material/warning:")
+        st.stop()
+
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        tab1, tab2 = st.tabs(["Login", "Register"])
+        
+        with tab1:
+            st.markdown('<div class="section-header"><h2>Executive Login</h2></div>', unsafe_allow_html=True)
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            if st.button("Sign In", type="primary"):
+                if login_email and login_password:
+                    try:
+                        res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
+                        st.session_state.logged_in = True
+                        st.session_state.user_email = res.user.email
+                        if res.session:
+                            st.session_state.access_token = res.session.access_token
+                            st.session_state.refresh_token = res.session.refresh_token
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Login failed: {e}")
+                else:
+                    st.warning("Please enter email and password.")
+
+        with tab2:
+            st.markdown('<div class="section-header"><h2>Register New Executive</h2></div>', unsafe_allow_html=True)
+            reg_email = st.text_input("Email", key="reg_email")
+            reg_password = st.text_input("Password", type="password", key="reg_password")
+            if st.button("Sign Up", type="primary"):
+                if reg_email and reg_password:
+                    try:
+                        res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
+                        st.success("Registration successful! You can now log in using the Login tab.")
+                    except Exception as e:
+                        st.error(f"Registration failed: {e}")
+                else:
+                    st.warning("Please enter email and password.")
+
+
 def sidebar():
     with st.sidebar:
         st.markdown("""
@@ -720,6 +789,9 @@ def sidebar():
         </div>
         """, unsafe_allow_html=True)
 
+        def nav_change():
+            st.session_state.show_profile = False
+
         page = st.radio(
             "Navigate",
             ["Overview",
@@ -728,10 +800,11 @@ def sidebar():
              "Payment Analysis",
              "Live Predictor",
              "Model Performance"],
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            on_change=nav_change
         )
 
-        st.markdown("<hr style='border-color:rgba(99,102,241,0.2);margin:16px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border-color:rgba(255,255,255,0.2);margin:16px 0;'>", unsafe_allow_html=True)
         st.markdown("<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>", unsafe_allow_html=True)
 
         _src = [
@@ -742,7 +815,7 @@ def sidebar():
         ]
         for _icon, _name, _meta in _src:
             st.markdown(f"""
-<div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.18);
+<div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);
             border-radius:9px;padding:8px 10px;margin-bottom:6px;overflow:hidden;">
   <span style="font-size:15px;vertical-align:middle;">{_icon}</span>
   <span style="font-size:11px;font-weight:600;color:#cbd5e1;
@@ -761,6 +834,18 @@ def sidebar():
   </span>
 </div>""", unsafe_allow_html=True)
 
+        st.markdown("<hr style='border-color:rgba(255,255,255,0.2);margin:16px 0;'>", unsafe_allow_html=True)
+        if st.button("Log Out", icon=":material/logout:", use_container_width=True):
+            st.session_state.logged_in = False
+            if "access_token" in st.session_state:
+                del st.session_state["access_token"]
+            if "refresh_token" in st.session_state:
+                del st.session_state["refresh_token"]
+            try:
+                supabase.auth.sign_out()
+            except:
+                pass
+            st.rerun()
 
     return page
 
@@ -1188,7 +1273,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
             sentiment_data['Active'], sentiment_data['Churned']
         ):
             st.markdown(f"""
-            <div style="background:rgba(30,30,60,0.5); border:1px solid rgba(99,102,241,0.15);
+            <div style="background:rgba(30,30,60,0.5); border:1px solid rgba(255,255,255,0.15);
                         border-radius:10px; padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
                 <span style="color:#e2e8f0; font-size:13px;">{sig}</span>
                 <span>
@@ -1209,7 +1294,7 @@ def page_call_analysis(df, call_log_proc, executive_profile):
         mode='lines+markers',
         line=dict(color='#6366f1', width=2.5),
         marker=dict(size=7, color='#a78bfa'),
-        fill='tozeroy', fillcolor='rgba(99,102,241,0.1)',
+        fill='tozeroy', fillcolor='rgba(255,255,255,0.1)',
         hovertemplate='<b>%{x|%d %b %Y}</b><br>Calls: %{y}<extra></extra>'
     ))
     fig4.update_layout(**theme(
@@ -1599,7 +1684,7 @@ def page_live_predictor(df, model_data, churn_full=None):
                     <span style="color:#64748b;">Call Engagement</span>
                     <b style="color:#e2e8f0;">{total_calls} calls / {total_call_dur:.1f} min total</b>
                 </div>
-                <hr style="border-color:rgba(99,102,241,0.2); margin:12px 0;">
+                <hr style="border-color:rgba(255,255,255,0.2); margin:12px 0;">
                 <div style="font-size:12px; color:#64748b;">
                     {'<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Schedule immediate follow-up call.' if pred==1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Continue regular follow-up.'}
                 </div>
@@ -1613,7 +1698,7 @@ def page_live_predictor(df, model_data, churn_full=None):
             call_transcript
         )
 
-        st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(99,102,241,0.06);'>"
+        st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(255,255,255,0.06);'>"
                     f"<b>Suggested Churn Reason:</b> {suggested_reason}<br>"
                     f"<small style='color:#94a3b8;'>Extraction method: {extraction_method}</small>"
                     f"</div>", unsafe_allow_html=True)
@@ -1745,7 +1830,7 @@ def page_model_performance(df, model_data):
                         <span style="font-size:11px; color:#94a3b8;">{row['Feature']}</span>
                         <span style="font-size:11px; color:#a78bfa;">{row['Importance']:.3f}</span>
                     </div>
-                    <div style="background:rgba(99,102,241,0.1); border-radius:4px; height:5px;">
+                    <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:5px;">
                         <div style="width:{pct:.0f}%; background:linear-gradient(90deg,#6366f1,#8b5cf6); height:100%; border-radius:4px;"></div>
                     </div>
                 </div>
@@ -1832,10 +1917,96 @@ def page_model_performance(df, model_data):
                  })
 
 
+def page_profile():
+    st.markdown('<div class="page-header"><h1><i class="fa-solid fa-user-circle"></i> Executive Profile</h1><p>Manage your account settings and personal info.</p></div>', unsafe_allow_html=True)
+    
+    try:
+        user_res = supabase.auth.get_user()
+        if not user_res or not user_res.user:
+            st.error("Could not fetch user session.")
+            return
+        u = user_res.user
+    except Exception as e:
+        st.error(f"Error fetching profile: {e}")
+        return
+
+    st.markdown(f"""
+    <div style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:10px; padding:20px; margin-bottom:20px;">
+        <h3 style="margin-top:0;">Account Information</h3>
+        <p style="margin:5px 0;"><strong>Email ID:</strong> {u.email}</p>
+        <p style="margin:5px 0;"><strong>User ID:</strong> {u.id}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<div class="section-header"><h2>Profile Details</h2></div>', unsafe_allow_html=True)
+        current_name = u.user_metadata.get("full_name", "") if u.user_metadata else ""
+        new_name = st.text_input("Display Name", value=current_name)
+        if st.button("Save Profile", type="primary"):
+            try:
+                supabase.auth.update_user({"data": {"full_name": new_name}})
+                st.success("Profile updated!")
+            except Exception as e:
+                st.error(f"Failed to update profile: {e}")
+
+    with c2:
+        st.markdown('<div class="section-header"><h2>Update Password</h2></div>', unsafe_allow_html=True)
+        new_pass = st.text_input("New Password", type="password")
+        if st.button("Update Password"):
+            if new_pass:
+                try:
+                    supabase.auth.update_user({"password": new_pass})
+                    st.success("Password updated!")
+                except Exception as e:
+                    st.error(f"Failed to update password: {e}")
+            else:
+                st.warning("Please enter a new password.")
+
+
 # ─────────────────────────────────────────────
 # MAIN APP
 # ─────────────────────────────────────────────
 def main():
+    if not st.session_state.get("logged_in", False):
+        page_auth()
+        return
+
+    # Top header bar
+    st.markdown("""
+        <style>
+            .profile-btn button {
+                border-radius: 50px !important;
+                border: 1px solid rgba(255,255,255,0.4) !important;
+                background: rgba(30,41,59,0.5) !important;
+                color: #e2e8f0 !important;
+                font-weight: 600 !important;
+            }
+            .profile-btn button:hover {
+                background: rgba(255,255,255,0.2) !important;
+                border-color: #8b5cf6 !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    c_left, c_right = st.columns([10, 1])
+    with c_right:
+        st.markdown('<div class="profile-btn">', unsafe_allow_html=True)
+        if st.session_state.get("show_profile", False):
+            if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
+                st.session_state.show_profile = False
+                st.rerun()
+        else:
+            if st.button("Profile", icon=":material/person:", use_container_width=True):
+                st.session_state.show_profile = True
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.session_state.get("show_profile", False):
+        sidebar()
+        page_profile()
+        return
+
     page = sidebar()
 
     # Load data

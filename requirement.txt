@@ -12,3 +12,4 @@ python-dotenv
 google-generativeai
 groq
 huggingface_hub
+supabase
