@@ -352,6 +352,11 @@ st.markdown("""
     }
     [data-testid="stSidebar"] button[kind="primary"] {
         font-weight: 600 !important;
+        background-color: rgba(56,189,248,0.1) !important;
+        color: #38bdf8 !important;
+        border: 1px solid transparent !important;
+        border-left: 3px solid #38bdf8 !important;
+        border-radius: 4px 8px 8px 4px !important;
     }
 
     /* Specifically style the Log Out button (last button in sidebar) */
@@ -377,6 +382,11 @@ st.markdown("""
         text-align: center;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
         margin-bottom: 8px;
+        height: 190px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
     .kpi-card:hover {
         transform: translateY(-2px);
