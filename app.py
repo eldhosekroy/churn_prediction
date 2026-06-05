@@ -17,11 +17,30 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from dotenv import load_dotenv
+
 import google.generativeai as genai
 from google.ai import generativelanguage_v1beta as gal
 import json
 import os
-from dotenv import load_dotenv
+
+# Groq and Hugging Face imports for LLM-based churn reason extraction
+try:
+    from groq import Groq
+
+    groq_available = True
+except ImportError:
+    groq_available = False
+    print("Warning: Groq is not available. Install with: pip install groq")
+
+try:
+    from huggingface_hub import inference
+
+    huggingface_available = True
+except ImportError:
+    huggingface_available = False
+    print("Warning: Hugging Face is not available. Install with: pip install huggingface_hub")
+
+
 from supabase import create_client, Client
 
 load_dotenv(override=True)
@@ -136,13 +155,7 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
         return {'status': 'Gemini unavailable', 'error': 'API key missing'}
 
     model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-    #project_name = os.getenv('PROJECT_NAME')
-    #if not model_name.startswith('models/') and not model_name.startswith('projects/'):
-    #    if project_name:
-    #        model_name = f"{project_name}/models/{model_name}"
-    #    else:
-    #        model_name = gal.TextServiceClient.model_path(model_name)
-
+    
     clean_model_name = model_name
     if clean_model_name.startswith('models/'):
         clean_model_name = clean_model_name[len('models/'):]
@@ -153,44 +166,6 @@ def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback
 
     prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
 
-    #try:
-    #    genai.configure(api_key=api_key, transport='rest')
-        # client = gal.TextServiceClient(client_options={'api_key': api_key})
-    #    client = genai.GenerativeModel(clean_model_name)
-    #    prompt_obj = gal.TextPrompt(text=prompt)
-    #    request = gal.GenerateTextRequest(
-    #        model=clean_model_name,
-    #        prompt=prompt_obj,
-    #        max_output_tokens=128
-    #    )
-    #    response = client.generate_content(prompt,
-    #        generation_config=genai.GenerationConfig(
-    #            response_mime_type="application/json"))
-    #    text = None
-    #    if getattr(response, 'candidates', None):
-    #        first_candidate = response.candidates[0]
-    #        text = getattr(first_candidate, 'output', None)
-    #        if text is None:
-    #            text = str(first_candidate)
-
-    #    if not text:
-    #        return {'status': 'Fallback heuristic', 'error': 'Empty Gemini response'}
-
-
-    #    parsed = parse_json_like(text)
-    #    if parsed is None:
-    #        parsed = {}
-    #        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
-    #        for line in lines:
-    #            if ':' in line:
-    #                key, value = line.split(':', 1)
-    #                parsed[key.strip().lower()] = value.strip()
-
-    #    reason = normalize_reason_label(parsed.get('reason') or parsed.get('reason_label') or text)
-    #    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-    #   return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
-    #except Exception as e:
-    #    return {'status': 'Fallback heuristic', 'error': str(e)}
     import time
     last_err = None
     response_text = None
@@ -246,13 +221,102 @@ def heuristic_recommendation(reason_label):
     }
     return mapping.get(reason_label, mapping['Other'])
 
+def call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    groq_api_key = os.getenv('GROQ_API_KEY')
+    if not groq_api_key:
+        return {'status': 'Groq unavailable', 'error': 'Groq API key missing'}
+    try:
+        from groq import Groq
+    except ImportError:
+        return {'status': 'Groq unavailable', 'error': 'groq package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = Groq(api_key=groq_api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are an expert HR analyst analyzing candidate churn data. Respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.3,
+            max_tokens=256
+        )
+        response_text = chat_completion.choices[0].message.content.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Groq)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'Groq failed', 'error': str(e)}
+
+
+def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    hf_api_key = os.getenv('HUGGINGFACE_API_KEY') or os.getenv('HF_TOKEN')
+    if not hf_api_key:
+        return {'status': 'HuggingFace unavailable', 'error': 'Hugging Face API key missing'}
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError:
+        return {'status': 'HuggingFace unavailable', 'error': 'huggingface_hub package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = InferenceClient(api_key=hf_api_key)
+        response = client.text_generation(
+            prompt=prompt + "\nJSON output:",
+            model="mistralai/Mistral-7B-Instruct-v0.2",
+            max_new_tokens=256,
+            temperature=0.3
+        )
+        response_text = response.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Hugging Face)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'HuggingFace failed', 'error': str(e)}
 
 def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
     api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if api_response and api_response.get('reason'):
-        return api_response['reason'], api_response.get('recommendation', ''), api_response.get('status', 'AI (Gemini)')
+    if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
+        return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
 
-    error_context = api_response.get('error') if isinstance(api_response, dict) else 'Unknown AI failure'
+    errors = []
+    if api_response and 'error' in api_response:
+        errors.append(f"Gemini: {api_response['error']}")
+
+    groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+    if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
+        return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
+
+    if groq_response and 'error' in groq_response:
+        errors.append(f"Groq: {groq_response['error']}")
+
+    hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+    if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
+        return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
+
+    if hf_response and 'error' in hf_response:
+        errors.append(f"Hugging Face: {hf_response['error']}")
+
+    error_context = " | ".join(errors) if errors else 'Unknown AI failure'
     text = ''
     if remarks_text:
         text += str(remarks_text).lower() + ' '
@@ -260,34 +324,25 @@ def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_tex
         text += str(feedback_text).lower()
 
     if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
-        reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
-        label_key = 'Financial issues'
-    elif any(k in text for k in
-             ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested',
-              'no longer interested']):
-        reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
-        label_key = 'Lack of interest'
-    elif any(k in text for k in
-             ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute',
-              'joined company', 'enrolled elsewhere']):
-        reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
-        label_key = 'Joined another institution'
-    elif any(k in text for k in
-             ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer',
-              'call dropped', 'busy', 'no contact', 'not responding']):
-        reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
-        label_key = 'Communication gaps'
-    elif any(
-            k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
-        reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
-        label_key = 'Lack of interest'
+         reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
+         label_key = 'Financial issues'
+    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
+    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+         reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
+         label_key = 'Joined another institution'
+    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+         reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
+         label_key = 'Communication gaps'
+    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
     else:
-        reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
-        label_key = 'Other'
+         reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
+         label_key = 'Other'
 
     return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
-
-    #return reason, heuristic_recommendation(reason), f'Fallback heuristic ({error_context})'
 
 
 # ─────────────────────────────────────────────
