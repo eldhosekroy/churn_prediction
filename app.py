@@ -414,6 +414,11 @@ st.markdown("""
         border-radius: 4px 8px 8px 4px !important;
     }
 
+    /* Hide input instructions (Press Enter to apply) */
+    [data-testid="InputInstructions"] {
+        display: none !important;
+    }
+
     /* Specifically style the Log Out button (last button in sidebar) */
     [data-testid="stSidebar"] .stButton:last-of-type button {
         background-color: rgba(255,255,255,0.03) !important;
@@ -842,37 +847,57 @@ def page_auth():
         tab1, tab2 = st.tabs(["Login", "Register"])
         
         with tab1:
-            st.markdown('<div class="section-header"><h2>Executive Login</h2></div>', unsafe_allow_html=True)
-            login_email = st.text_input("Email", key="login_email")
-            login_password = st.text_input("Password", type="password", key="login_password")
-            if st.button("Sign In", type="primary"):
-                if login_email and login_password:
-                    try:
-                        res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
-                        st.session_state.logged_in = True
-                        st.session_state.user_email = res.user.email
-                        if res.session:
-                            st.session_state.access_token = res.session.access_token
-                            st.session_state.refresh_token = res.session.refresh_token
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Login failed: {e}")
-                else:
-                    st.warning("Please enter email and password.")
+            st.markdown("""
+            <div style="text-align: center; padding: 20px 0;">
+                <i class="fa-solid fa-lock" style="font-size: 32px; color: #38bdf8; margin-bottom: 16px;"></i>
+                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Executive Login</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Access the secure analytics dashboard</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.form("login_form", border=False):
+                login_email = st.text_input("Email Address", key="login_email")
+                login_password = st.text_input("Password", type="password", key="login_password")
+                st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+                submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+                if submitted:
+                    if login_email and login_password:
+                        try:
+                            res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
+                            st.session_state.logged_in = True
+                            st.session_state.user_email = res.user.email
+                            if res.session:
+                                st.session_state.access_token = res.session.access_token
+                                st.session_state.refresh_token = res.session.refresh_token
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Login failed: {e}")
+                    else:
+                        st.warning("Please enter email and password.")
 
         with tab2:
-            st.markdown('<div class="section-header"><h2>Register New Executive</h2></div>', unsafe_allow_html=True)
-            reg_email = st.text_input("Email", key="reg_email")
-            reg_password = st.text_input("Password", type="password", key="reg_password")
-            if st.button("Sign Up", type="primary"):
-                if reg_email and reg_password:
-                    try:
-                        res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
-                        st.success("Registration successful! You can now log in using the Login tab.")
-                    except Exception as e:
-                        st.error(f"Registration failed: {e}")
-                else:
-                    st.warning("Please enter email and password.")
+            st.markdown("""
+            <div style="text-align: center; padding: 20px 0;">
+                <i class="fa-solid fa-user-plus" style="font-size: 32px; color: #34d399; margin-bottom: 16px;"></i>
+                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Create Account</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Register for executive access</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.form("register_form", border=False):
+                reg_email = st.text_input("Email Address", key="reg_email")
+                reg_password = st.text_input("Password", type="password", key="reg_password")
+                st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+                submitted_reg = st.form_submit_button("Sign Up", type="primary", use_container_width=True)
+                if submitted_reg:
+                    if reg_email and reg_password:
+                        try:
+                            res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
+                            st.success("Registration successful! You can now log in using the Login tab.")
+                        except Exception as e:
+                            st.error(f"Registration failed: {e}")
+                    else:
+                        st.warning("Please enter email and password.")
 
 
 def sidebar():
