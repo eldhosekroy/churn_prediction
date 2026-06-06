@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import markdown
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -1838,15 +1839,51 @@ def page_live_predictor(df, model_data, churn_full=None):
             call_transcript
         )
 
-        st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(255,255,255,0.06);'>"
-                    f"<b><small style='color:#f8fafc;'>Suggested Churn Reason:</b> {suggested_reason}<br>"
-                    f"<small style='color:#94a3b8;'>Extraction method: {extraction_method}</small>"
-                    f"</div>", unsafe_allow_html=True)
+        def format_ai_output(obj):
+            if isinstance(obj, str):
+                obj_s = obj.strip()
+                if (obj_s.startswith('{') and obj_s.endswith('}')) or (obj_s.startswith('[') and obj_s.endswith(']')):
+                    import ast
+                    try:
+                        obj = ast.literal_eval(obj_s)
+                    except Exception:
+                        pass
+            if isinstance(obj, dict):
+                return "\n\n".join([f"**{k}:** {v}" for k, v in obj.items()])
+            elif isinstance(obj, list):
+                return "\n\n".join([f"- {v}" for v in obj])
+            return str(obj)
+
+        if suggested_reason and str(suggested_reason).lower() not in ['unknown', 'none', 'nan', '']:
+            reason_html = markdown.markdown(format_ai_output(suggested_reason))
+            st.markdown(f"""
+            <div style="margin-top:20px; padding:20px; border-radius:12px; background: linear-gradient(145deg, rgba(239,68,68,0.05) 0%, rgba(239,68,68,0.02) 100%); border: 1px solid rgba(239,68,68,0.2); box-shadow: 0 4px 16px rgba(239,68,68,0.05);">
+                <div style="display:flex; align-items:center; margin-bottom: 12px;">
+                    <i class="fa-solid fa-magnifying-glass-chart" style="color:#ef4444; font-size:20px; margin-right:12px;"></i>
+                    <h4 style="margin:0; color:#f8fafc; font-family:'Inter', sans-serif; font-size:18px; font-weight:700;">AI Detected Churn Risk Factor</h4>
+                </div>
+                <div style="color:#e2e8f0; font-size:16px; line-height:1.6; margin-left:32px;">
+                    {reason_html}
+                </div>
+                <div style="margin-top:14px; margin-left:32px; font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:1px; font-weight:600;">
+                    <i class="fa-solid fa-microchip" style="margin-right:4px;"></i> Extraction Method: {extraction_method}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         if ai_recommendation:
-            st.markdown(f"<div style='margin-top:12px; padding:14px; border-radius:10px; background:rgba(52,211,153,0.08);'>"
-                        f"<b><small style='color:#f8fafc;'>AI-Generated Recommendation:</b> {ai_recommendation}" 
-                        f"</div>", unsafe_allow_html=True)
+            rec_html = markdown.markdown(format_ai_output(ai_recommendation))
+            st.markdown(f"""
+            <div style="margin-top:16px; padding:20px; border-radius:12px; background: linear-gradient(145deg, rgba(16,185,129,0.05) 0%, rgba(16,185,129,0.02) 100%); border: 1px solid rgba(16,185,129,0.2); box-shadow: 0 4px 16px rgba(16,185,129,0.05);">
+                <div style="display:flex; align-items:center; margin-bottom: 12px;">
+                    <i class="fa-solid fa-wand-magic-sparkles" style="color:#10b981; font-size:20px; margin-right:12px;"></i>
+                    <h4 style="margin:0; color:#f8fafc; font-family:'Inter', sans-serif; font-size:18px; font-weight:700;">AI Retention Recommendation</h4>
+                </div>
+                <div style="color:#e2e8f0; font-size:16px; line-height:1.6; margin-left:32px;">
+                    {rec_html}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
