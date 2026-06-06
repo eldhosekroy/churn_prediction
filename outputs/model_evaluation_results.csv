@@ -1,10 +1,7 @@
 Model,Accuracy,Precision,Recall,F1 Score,ROC-AUC
-Logistic Regression,1.0,1.0,1.0,1.0,1.0
 Decision Tree,1.0,1.0,1.0,1.0,1.0
+Naive Bayes,1.0,1.0,1.0,1.0,1.0
 Random Forest,1.0,1.0,1.0,1.0,1.0
 Gradient Boosting,1.0,1.0,1.0,1.0,1.0
 AdaBoost,1.0,1.0,1.0,1.0,1.0
-Naive Bayes,1.0,1.0,1.0,1.0,1.0
-SVM,1.0,1.0,1.0,1.0,1.0
 XGBoost,1.0,1.0,1.0,1.0,1.0
-K-Nearest Neighbors,0.96,1.0,0.8,0.8888888888888888,1.0
