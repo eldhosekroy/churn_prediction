@@ -249,11 +249,11 @@ df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].fillna(0)
 # Handle infinite values
 df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].replace([np.inf, -np.inf], 0)
 
-df_candidate['Zero_Payment'] = (df_candidate['Paid_amount'] == 0).astype(int)
+df_candidate['Booking_fee'] = (df_candidate['Paid_amount'] == 2000).astype(int)
 df_candidate['Negative_Feedback'] = df_candidate['Feedback'].astype(str).str.strip().str.lower().eq('negative').astype(int)
 
 # Interaction feature: High-risk indicator (Zero Payment AND Negative Feedback)
-df_candidate['High_Risk_Indicator'] = (df_candidate['Zero_Payment'] * df_candidate['Negative_Feedback']).astype(int)
+df_candidate['High_Risk_Indicator'] = (df_candidate['Booking_fee'] * df_candidate['Negative_Feedback']).astype(int)
 
 print(f"   Payment Ratio Range: {df_candidate['Payment_Ratio'].min():.2f} - {df_candidate['Payment_Ratio'].max():.2f}")
 
@@ -310,7 +310,8 @@ def extract_remark_features(remarks_series):
         # Convert to lowercase string
         remarks_str = remarks_series.astype(str).str.lower()
         
-        features['has_interest'] = remarks_str.str.contains('interested|keen|enthusiastic|confirmed|enrolled', na=False).astype(int)
+        features['has_interest'] = remarks_str.str.contains('keen|enthusiastic|confirmed|enrolled', na=False).astype(int)
+        features['has_no_interest'] = remarks_str.str.contains('not interested|lack of interest|no confirmation|not enrolled', na=False).astype(int)
         features['has_no_response'] = remarks_str.str.contains('no response|no pickup|unreachable|voicemail', na=False).astype(int)
         features['has_payment_discussion'] = remarks_str.str.contains('payment|fee|emi|scholarship', na=False).astype(int)
         features['has_technical_discussion'] = remarks_str.str.contains('technical|syllabus|project|mentor', na=False).astype(int)
@@ -385,7 +386,7 @@ numerical_features = ['Experience', 'Career_gap', 'Total_Amount', 'Paid_amount',
                       'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 
                       'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration',
                       'Call_Frequency', 'Executive_Experience',
-                      'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']
+                      'has_interest', 'has_no_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']
 
 # Filter to only existing columns
 categorical_features = [col for col in categorical_features if col in df.columns]
@@ -1191,7 +1192,7 @@ def normalize_reason_label(text):
     normalized = text.strip().lower()
     mappings = {
         'Financial issues': ['financial issues', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
-        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
+        'Lack of interest': ['no confirmation', 'lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
         'Joined another institution': ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
         'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
         'Other': ['other', 'unknown', 'unclear']
@@ -1442,7 +1443,7 @@ def extract_reason_and_recommendation(candidate_info, remarks_text=None, feedbac
     if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
          reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
          label_key = 'Financial issues'
-    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+    elif any(k in text for k in ['no confirmation', 'not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
          reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
          label_key = 'Lack of interest'
     elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
@@ -1471,7 +1472,7 @@ churned_candidates['Suggested_Reasons'] = churned_candidates.apply(extract_reaso
 df_with_remarks = churned_candidates[[
     'Candidate_ID', 'Source', 'Education',
     'Current_status', 'Total_Amount', 'Paid_amount', 'Payment_Ratio',
-    'Total_Calls', 'Call_Frequency', 'has_no_response',
+    'Total_Calls', 'Call_Frequency', 'has_no_response', 'has_no_interest',
     'Induction_Session', 'Feedback', 'Churn', 'Suggested_Reasons'
 ]].copy()
 

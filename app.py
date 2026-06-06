@@ -107,7 +107,7 @@ def normalize_reason_label(text):
     normalized = text.strip().lower()
     mappings = {
         'Financial issues': ['financial issues', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
-        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
+        'Lack of interest': ['no confirmation', 'lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
         'Joined another institution': ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
         'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
         'Other': ['other', 'unknown', 'unclear']
@@ -326,7 +326,7 @@ def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_tex
     if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
          reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
          label_key = 'Financial issues'
-    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+    elif any(k in text for k in ['no confirmation', 'not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
          reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
          label_key = 'Lack of interest'
     elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
@@ -681,7 +681,7 @@ def preprocess(candidate_profile, call_log, executive_profile):
     )
     df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].replace([np.inf, -np.inf], 0).fillna(0)
     df_candidate['Outstanding_Amount'] = df_candidate['Total_Amount'] - df_candidate['Paid_amount']
-    df_candidate['Zero_Payment'] = (df_candidate['Paid_amount'] == 0).astype(int)
+    df_candidate['Booking_fee'] = (df_candidate['Paid_amount'] == 2000).astype(int)
     df_candidate['Negative_Feedback'] = df_candidate['Feedback'].astype(str).str.strip().str.lower().eq('negative').astype(int)
 
     # ── Call Log Processing ──────────────────────
@@ -715,7 +715,8 @@ def preprocess(candidate_profile, call_log, executive_profile):
         sub = call_log_proc[call_log_proc['Candidate_ID'] == cid]['Call_Remarks'].astype(str).str.lower()
         remark_list.append({
             'Candidate_ID': cid,
-            'has_interest':            int(sub.str.contains('interested|keen|enthusiastic|confirmed|enrolled').any()),
+            'has_interest':            int(sub.str.contains('keen|enthusiastic|confirmed|enrolled').any()),
+            'has_no_interest':         int(sub.str.contains('no confirmation|not interested|lack of interest|not enrolled').any()),
             'has_no_response':         int(sub.str.contains('no response|no pickup|unreachable|voicemail').any()),
             'has_payment_discussion':  int(sub.str.contains('payment|fee|emi|scholarship').any()),
             'has_technical_discussion':int(sub.str.contains('technical|syllabus|project|mentor').any()),
@@ -1984,14 +1985,14 @@ def page_model_performance(df, model_data):
     with r1:
         st.markdown("""
         <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> Zero Payment</div>
+            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> No interest </div>
         """, unsafe_allow_html=True)
-        zero_pay = (churned_df['Paid_amount'] == 0).sum()
-        pct = zero_pay / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        no_int = churned_df.get('has_no_interest', pd.Series([0]*len(churned_df))).sum() if 'has_no_interest' in churned_df.columns else 0
+        pct = no_int / len(churned_df) * 100 if len(churned_df) > 0 else 0
         st.markdown(f"""
-            <div style="font-size:32px; font-weight:800; color:#f87171;">{zero_pay}</div>
-            <div style="color:#64748b; font-size:13px;">churned with ₹0 paid ({pct:.0f}%)</div>
-            <div style="margin-top:10px; font-size:12px; color:#475569;">Most churned candidates made no payment at all — a strong churn signal.</div>
+            <div style="font-size:32px; font-weight:800; color:#f87171;">{int(no_int)}</div>
+            <div style="color:#64748b; font-size:13px;">Churned with no longer interest ({pct:.0f}%)</div>
+            <div style="margin-top:10px; font-size:12px; color:#475569;">Churned candidates made initial payment - but no longer interested, they may have attended or not attended the induction session.</div>
         </div>""", unsafe_allow_html=True)
 
     with r2:
