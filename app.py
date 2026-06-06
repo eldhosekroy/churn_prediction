@@ -394,24 +394,17 @@ st.markdown("""
     [data-testid="stSidebar"] button {
         justify-content: flex-start !important;
         padding-left: 16px !important;
-    }
-    [data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
         border-color: transparent !important;
         color: #94a3b8 !important;
         font-weight: 500 !important;
+        border-radius: 4px 8px 8px 4px !important;
+        border-left: 3px solid transparent !important;
+        transition: all 0.2s ease;
     }
-    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+    [data-testid="stSidebar"] button:hover {
         background-color: rgba(255,255,255,0.05) !important;
         color: #ffffff !important;
-    }
-    [data-testid="stSidebar"] button[kind="primary"] {
-        font-weight: 600 !important;
-        background-color: rgba(56,189,248,0.1) !important;
-        color: #38bdf8 !important;
-        border: 1px solid transparent !important;
-        border-left: 3px solid #38bdf8 !important;
-        border-radius: 4px 8px 8px 4px !important;
     }
 
     /* Hide input instructions (Press Enter to apply) */
@@ -927,11 +920,23 @@ def sidebar():
         ]
 
         for p_name, p_icon in pages:
-            btn_type = "primary" if st.session_state.current_page == p_name else "secondary"
-            if st.button(p_name, icon=p_icon, type=btn_type, use_container_width=True):
+            if st.button(p_name, icon=p_icon, use_container_width=True):
                 st.session_state.current_page = p_name
                 st.session_state.show_profile = False
                 st.rerun()
+
+        # Dynamically inject CSS to highlight the active button by its exact DOM index
+        active_idx = [p[0] for p in pages].index(st.session_state.current_page) + 2
+        st.markdown(f"""
+        <style>
+            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div.element-container:nth-child({active_idx}) button {{
+                font-weight: 600 !important;
+                background-color: rgba(56,189,248,0.1) !important;
+                color: #38bdf8 !important;
+                border-left: 3px solid #38bdf8 !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
 
         page = st.session_state.current_page
 
