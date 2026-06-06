@@ -872,6 +872,13 @@ print(f"\n Top 3 models for tuning: {top_models}")
 
 # Tune the best performing model (by F1 Score, with RF preference on tie)
 best_model_name = results_df.iloc[0]['Model']
+
+# Force preference for probability-calibrated ensemble models for smooth UI gauge
+if best_model_name in ['Decision Tree', 'KNN', 'SVM', 'Naive Bayes']:
+    for m in ['Random Forest', 'Gradient Boosting', 'XGBoost', 'Logistic Regression']:
+        if m in results_df['Model'].values:
+            best_model_name = m
+            break
 print(f"\n Tuning: {best_model_name}")
 print(f"  (Trained on balanced dataset: {X_train_fit.shape[0]} samples with {balance_method})")
 

@@ -294,28 +294,29 @@ def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, fee
     except Exception as e:
         return {'status': 'HuggingFace failed', 'error': str(e)}
 
-def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
-        return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
-
+def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None, preferred_ai="Auto"):
     errors = []
-    if api_response and 'error' in api_response:
-        errors.append(f"Gemini: {api_response['error']}")
-
-    groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
-        return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
-
-    if groq_response and 'error' in groq_response:
-        errors.append(f"Groq: {groq_response['error']}")
-
-    hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
-        return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
-
-    if hf_response and 'error' in hf_response:
-        errors.append(f"Hugging Face: {hf_response['error']}")
+    
+    if preferred_ai in ["Auto (Fallback)", "Gemini"]:
+        api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
+            return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
+        if api_response and 'error' in api_response:
+            errors.append(f"Gemini: {api_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Groq"]:
+        groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
+            return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
+        if groq_response and 'error' in groq_response:
+            errors.append(f"Groq: {groq_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Hugging Face"]:
+        hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
+            return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
+        if hf_response and 'error' in hf_response:
+            errors.append(f"Hugging Face: {hf_response['error']}")
 
     error_context = " | ".join(errors) if errors else 'Unknown AI failure'
     text = ''
@@ -1690,6 +1691,13 @@ def page_live_predictor(df, model_data, churn_full=None):
 
     days_since_payment = st.number_input("Days Since Last Payment", 0, 1000, 60, key="p_dsp")
 
+    st.markdown('<div class="section-header"><h2>AI Extraction Engine</h2></div>', unsafe_allow_html=True)
+    preferred_ai = st.selectbox(
+        "Select AI Model for Reason & Recommendation Extraction",
+        ["Auto (Fallback)", "Gemini", "Groq", "Hugging Face"],
+        help="Choose the underlying AI engine to analyze call transcripts and remarks. 'Auto (Fallback)' tries Gemini first, then Groq, then Hugging Face."
+    )
+
     st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
@@ -1836,7 +1844,8 @@ def page_live_predictor(df, model_data, churn_full=None):
             raw_input,
             call_remarks,
             feedback,
-            call_transcript
+            call_transcript,
+            preferred_ai=preferred_ai
         )
 
         def format_ai_output(obj):
