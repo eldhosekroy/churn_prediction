@@ -1054,7 +1054,11 @@ def page_overview(df, call_log_proc, churn_full=None):
     # ── Top Suggested Churn Reasons (from model outputs) ─────────
     if churn_full is not None and 'Suggested_Churn_Reason' in churn_full.columns:
         try:
-            mapped_reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].dropna().astype(str).apply(normalize_reason_label)
+            if 'Candidate_ID' in churn_full.columns:
+                unique_churn = churn_full[churn_full['Churn'] == 1].drop_duplicates(subset=['Candidate_ID'])
+            else:
+                unique_churn = churn_full[churn_full['Churn'] == 1]
+            mapped_reasons = unique_churn['Suggested_Churn_Reason'].dropna().astype(str).apply(normalize_reason_label)
             reasons = mapped_reasons.value_counts().reset_index()
             reasons.columns = ['Reason', 'Count']
 
