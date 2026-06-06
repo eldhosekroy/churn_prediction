@@ -1161,32 +1161,6 @@ def aggregate_text_by_candidate(call_log_df):
 
     return agg
 
-
-def parse_gemini_response(response_data):
-    if not isinstance(response_data, dict):
-        return None
-
-    text = None
-    if 'output' in response_data:
-        output = response_data['output']
-        if isinstance(output, list) and output:
-            first = output[0]
-            if isinstance(first, dict):
-                content = first.get('content', first)
-            else:
-                content = first
-            if isinstance(content, list):
-                text = ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in content)
-            else:
-                text = str(content)
-    elif 'choices' in response_data:
-        choices = response_data['choices']
-        if isinstance(choices, list) and choices:
-            choice = choices[0]
-            text = choice.get('message', {}).get('content') or choice.get('text')
-    return text
-
-
 def normalize_reason_label(text):
     if not text:
         return None
@@ -1209,22 +1183,6 @@ def normalize_reason_label(text):
     return 'Other'
 
 
-def parse_json_like(text):
-    if not text:
-        return None
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-
-    result = {}
-    for line in text.splitlines():
-        if ':' in line:
-            key, value = line.split(':', 1)
-            result[key.strip().lower()] = value.strip()
-    return result if result else None
-
 print("\n" + "=" * 80)
 print("STEP 15: EXTRACT CHURN REASONS FOR CANDIDATES")
 print("=" * 80)
@@ -1238,97 +1196,6 @@ churned_candidates = churned_candidates.merge(df_for_reasons[['Candidate_ID', 'M
                                               on='Candidate_ID', how='left')
 
 
-# LLM-based churn reason extraction functions using Gemini (primary), Groq  and Hugging Face (fallback)
-
-def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    details = []
-    if isinstance(candidate_info, dict):
-        details.append("Candidate details:")
-        for key in ['Source', 'Education', 'Background', 'Role', 'Current_status', 'Stream', 'Course', 'Mode', 'Payment_Method', 'Executive_Team', 'Induction_Session', 'Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator', 'Days_Since_Payment', 'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration', 'Call_Frequency', 'Executive_Experience', 'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']:
-            if key in candidate_info and candidate_info[key] is not None:
-                details.append(f"- {key}: {candidate_info[key]}")
-    else:
-        details = ["Candidate details: Not available"]
-
-    details.append("\nCall details:")
-    details.append(f"- Feedback: {feedback_text or 'None'}")
-    details.append(f"- Call remarks: {remarks_text or 'None'}")
-    if transcript_text:
-        details.append(f"- Call transcript: {transcript_text}")
-
-    prompt = (
-            "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
-            "Your task is to analyze candidate profile details and communication logs context to formulate a concise, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
-            "Value of the 'reason' key in the output JSON MUST be a comprehensive, detailed sentence or maximum three sentences explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, call remarks and call transcription if it is available, I should point out one main reason in the list: financial issue, lack of interest, joined another instituition, communication gap.\n"
-            "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
-            "Strict Format Constraint:\n"
-            "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
-            "Candidate Data context:\n" + "\n".join(details)
-    )
-    return prompt
-
-def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY') or os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        return {'status': 'Gemini unavailable', 'error': 'API key missing'}
-
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-    
-    clean_model_name = model_name
-    if clean_model_name.startswith('models/'):
-        clean_model_name = clean_model_name[len('models/'):]
-
-    # If a prohibited/legacy model is specified, fall back to the modern gemini-2.5-flash
-    if any(m in clean_model_name.lower() for m in ['1.5-flash', '1.5-pro', 'gemini-pro', '2.0-flash', '2.0-pro']):
-        clean_model_name = 'gemini-2.5-flash'
-
-    prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-
-    import time
-    last_err = None
-    response_text = None
-
-    # Implement exponential backoff retries to combat transient 503 errors
-    for attempt in range(1, 4):
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(clean_model_name)
-
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            response_text = response.text
-            last_err = None
-            break
-        except Exception as e:
-            last_err = e
-            if attempt < 3:
-                time.sleep(2 ** attempt)
-
-    if last_err:
-        return {'status': 'Fallback heuristic', 'error': str(last_err)}
-
-    if not response_text:
-        return {'status': 'Fallback heuristic', 'error': 'Empty response from model'}
-
-    raw_text = response_text.strip()
-    if raw_text.startswith("```"):
-        lines = raw_text.splitlines()
-        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-            raw_text = "\n".join(lines[1:-1])
-
-    parsed = parse_json_like(raw_text)
-    if parsed is None:
-        parsed = {}
-
-    # Extract detailed reason directly, do not map it into a 1-word label here
-    reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-    return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
-
 def heuristic_recommendation(reason_label):
     mapping = {
         'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
@@ -1339,102 +1206,8 @@ def heuristic_recommendation(reason_label):
     }
     return mapping.get(reason_label, mapping['Other'])
 
-def call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    groq_api_key = os.getenv('GROQ_API_KEY')
-    if not groq_api_key:
-        return {'status': 'Groq unavailable', 'error': 'Groq API key missing'}
-    try:
-        from groq import Groq
-    except ImportError:
-        return {'status': 'Groq unavailable', 'error': 'groq package not installed'}
+def extract_reason_and_recommendation (remarks_text=None, feedback_text=None, transcript_text=None):
 
-    try:
-        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-        client = Groq(api_key=groq_api_key)
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are an expert HR analyst analyzing candidate churn data. Respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'."},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.3,
-            max_tokens=256
-        )
-        response_text = chat_completion.choices[0].message.content.strip()
-        raw_text = response_text
-        if raw_text.startswith("```"):
-            lines = raw_text.splitlines()
-            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-                raw_text = "\n".join(lines[1:-1])
-
-        parsed = parse_json_like(raw_text)
-        if not parsed:
-            parsed = {}
-        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-        return {'status': 'AI (Groq)', 'reason': reason, 'recommendation': recommendation}
-    except Exception as e:
-        return {'status': 'Groq failed', 'error': str(e)}
-
-
-def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    hf_api_key = os.getenv('HUGGINGFACE_API_KEY') or os.getenv('HF_TOKEN')
-    if not hf_api_key:
-        return {'status': 'HuggingFace unavailable', 'error': 'Hugging Face API key missing'}
-    try:
-        from huggingface_hub import InferenceClient
-    except ImportError:
-        return {'status': 'HuggingFace unavailable', 'error': 'huggingface_hub package not installed'}
-
-    try:
-        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-        client = InferenceClient(api_key=hf_api_key)
-        response = client.text_generation(
-            prompt=prompt + "\nJSON output:",
-            model="mistralai/Mistral-7B-Instruct-v0.2",
-            max_new_tokens=256,
-            temperature=0.3
-        )
-        response_text = response.strip()
-        raw_text = response_text
-        if raw_text.startswith("```"):
-            lines = raw_text.splitlines()
-            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-                raw_text = "\n".join(lines[1:-1])
-
-        parsed = parse_json_like(raw_text)
-        if not parsed:
-            parsed = {}
-        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-        return {'status': 'AI (Hugging Face)', 'reason': reason, 'recommendation': recommendation}
-    except Exception as e:
-        return {'status': 'HuggingFace failed', 'error': str(e)}
-
-def extract_reason_and_recommendation(candidate_info, remarks_text=None, feedback_text=None, transcript_text=None):
-    api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
-        return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
-
-    errors = []
-    if api_response and 'error' in api_response:
-        errors.append(f"Gemini: {api_response['error']}")
-
-    groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
-        return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
-
-    if groq_response and 'error' in groq_response:
-        errors.append(f"Groq: {groq_response['error']}")
-
-    hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-    if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
-        return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
-
-    if hf_response and 'error' in hf_response:
-        errors.append(f"Hugging Face: {hf_response['error']}")
-
-    error_context = " | ".join(errors) if errors else 'Unknown AI failure'
     text = ''
     if remarks_text:
         text += str(remarks_text).lower() + ' '
@@ -1442,55 +1215,48 @@ def extract_reason_and_recommendation(candidate_info, remarks_text=None, feedbac
         text += str(feedback_text).lower()
 
     if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
-         reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
+         reason = 'Financial issues'
          label_key = 'Financial issues'
     elif any(k in text for k in ['no confirmation', 'not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
-         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         reason = 'Lack of interest'
          label_key = 'Lack of interest'
-    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
-         reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
+    elif any(k in text for k in ['another instituition', 'joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+         reason = 'Joined another institution'
          label_key = 'Joined another institution'
     elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
-         reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
+         reason = 'Communication gaps'
          label_key = 'Communication gaps'
     elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
-         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         reason = 'Lack of interest'
          label_key = 'Lack of interest'
     else:
-         reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
+         reason = 'Other'
          label_key = 'Other'
 
-    return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
+    return reason, heuristic_recommendation(label_key)
 
-# Apply LLM-based reason extraction
-print("\n Extracting churn reasons using LLM analysis...")
-print(f"   - Groq LLM available: {groq_available}")
-print(f"   - Hugging Face available: {huggingface_available}")
+# Build aggregated remarks and merge with the main dataframe `df`
+remarks_agg = aggregate_text_by_candidate(call_log)
+df_with_remarks = df.merge(remarks_agg, on='Candidate_ID', how='left')
+# Ensure Feedback column exists
+if 'Feedback' not in df_with_remarks.columns:
+     df_with_remarks['Feedback'] = np.nan
+# Generate suggested reasons for all candidates (we'll filter churned ones afterwards)
+df_with_remarks['Suggested_Churn_Reason'] = df_with_remarks.apply(lambda r: extract_reason_and_recommendation(r.get('All_Call_Remarks', ''), r.get('Feedback', '')), axis=1)
+# Prepare output for churn candidates
+churn_reasons_df = df_with_remarks.loc[df_with_remarks['Churn'] == 1, ['Candidate_ID', 'Churn', 'Suggested_Churn_Reason', 'All_Call_Remarks', 'Feedback' ]].copy()
+if churn_reasons_df.empty:
+    print(' No churn candidates found to suggest reasons for.')
+else:
+    churn_reasons_df.to_csv(os.path.join(output_dir,'churn_reasons.csv'), index=False)
+print(' Saved churn reasons to: churn_reasons.csv')
 
-churned_candidates['Suggested_Reasons'] = churned_candidates.apply(extract_reason_and_recommendation, axis=1)
 
-def get_normalized_reason(row):
-    if isinstance(row, tuple) and len(row) > 0:
-        raw_reason = row[0]
-        return normalize_reason_label(raw_reason)
-    elif isinstance(row, str):
-        return normalize_reason_label(row)
-    return 'Other'
-
-churned_candidates['Normalised_Reasons'] = churned_candidates['Suggested_Reasons'].apply(get_normalized_reason)
-
-# Create detailed inspection dataframe
-df_with_remarks = churned_candidates[[
-    'Candidate_ID', 'Source', 'Education',
-    'Current_status', 'Total_Amount', 'Paid_amount', 'Payment_Ratio',
-    'Total_Calls', 'Call_Frequency', 'has_no_response', 'has_no_interest',
-    'Induction_Session', 'Feedback', 'Churn', 'Suggested_Reasons', 'Normalised_Reasons'
-]].copy()
 
 print(f"\n Churn reason analysis complete!")
 print(f" Total churned candidates analyzed: {len(df_with_remarks)}")
 print("\n Sample reasons assigned:")
-print(df_with_remarks[['Candidate_ID', 'Suggested_Reasons']].head(10).to_string(index=False))
+print(df_with_remarks[['Candidate_ID', 'Suggested_Churn_Reason']].head(10).to_string(index=False))
 
 # Save full dataset with suggested reasons for inspection
 df_with_remarks.to_csv(os.path.join(output_dir, 'candidates_with_suggested_reasons.csv'), index=False)
