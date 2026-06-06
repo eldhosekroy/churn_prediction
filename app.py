@@ -394,24 +394,22 @@ st.markdown("""
     [data-testid="stSidebar"] button {
         justify-content: flex-start !important;
         padding-left: 16px !important;
-    }
-    [data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
         border-color: transparent !important;
         color: #94a3b8 !important;
         font-weight: 500 !important;
+        border-radius: 4px 8px 8px 4px !important;
+        border-left: 3px solid transparent !important;
+        transition: all 0.2s ease;
     }
-    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+    [data-testid="stSidebar"] button:hover {
         background-color: rgba(255,255,255,0.05) !important;
         color: #ffffff !important;
     }
-    [data-testid="stSidebar"] button[kind="primary"] {
-        font-weight: 600 !important;
-        background-color: rgba(56,189,248,0.1) !important;
-        color: #38bdf8 !important;
-        border: 1px solid transparent !important;
-        border-left: 3px solid #38bdf8 !important;
-        border-radius: 4px 8px 8px 4px !important;
+
+    /* Hide input instructions (Press Enter to apply) */
+    [data-testid="InputInstructions"] {
+        display: none !important;
     }
 
     /* Specifically style the Log Out button (last button in sidebar) */
@@ -683,7 +681,7 @@ def preprocess(candidate_profile, call_log, executive_profile):
     )
     df_candidate['Payment_Ratio'] = df_candidate['Payment_Ratio'].replace([np.inf, -np.inf], 0).fillna(0)
     df_candidate['Outstanding_Amount'] = df_candidate['Total_Amount'] - df_candidate['Paid_amount']
-    df_candidate['Zero_Payment'] = (df_candidate['Paid_amount'] == 0).astype(int)
+    df_candidate['Booking_fee'] = (df_candidate['Paid_amount'] == 2000).astype(int)
     df_candidate['Negative_Feedback'] = df_candidate['Feedback'].astype(str).str.strip().str.lower().eq('negative').astype(int)
 
     # ── Call Log Processing ──────────────────────
@@ -718,7 +716,9 @@ def preprocess(candidate_profile, call_log, executive_profile):
         remark_list.append({
             'Candidate_ID': cid,
             'has_interest':            int(sub.str.contains('interested|keen|enthusiastic|confirmed|enrolled').any()),
+            'has_no_interest':         int(sub.str.contains('not interested|lack of interest|no confirmation|not enrolled').any()),
             'has_no_response':         int(sub.str.contains('no response|no pickup|unreachable|voicemail').any()),
+            'joined_another':          int(sub.str.contains('joined another instituition|another|instituition').any()),
             'has_payment_discussion':  int(sub.str.contains('payment|fee|emi|scholarship').any()),
             'has_technical_discussion':int(sub.str.contains('technical|syllabus|project|mentor').any()),
         })
@@ -842,37 +842,57 @@ def page_auth():
         tab1, tab2 = st.tabs(["Login", "Register"])
         
         with tab1:
-            st.markdown('<div class="section-header"><h2>Executive Login</h2></div>', unsafe_allow_html=True)
-            login_email = st.text_input("Email", key="login_email")
-            login_password = st.text_input("Password", type="password", key="login_password")
-            if st.button("Sign In", type="primary"):
-                if login_email and login_password:
-                    try:
-                        res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
-                        st.session_state.logged_in = True
-                        st.session_state.user_email = res.user.email
-                        if res.session:
-                            st.session_state.access_token = res.session.access_token
-                            st.session_state.refresh_token = res.session.refresh_token
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Login failed: {e}")
-                else:
-                    st.warning("Please enter email and password.")
+            st.markdown("""
+            <div style="text-align: center; padding: 20px 0;">
+                <i class="fa-solid fa-lock" style="font-size: 32px; color: #38bdf8; margin-bottom: 16px;"></i>
+                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Executive Login</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Access the secure analytics dashboard</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.form("login_form", border=False):
+                login_email = st.text_input("Email Address", key="login_email")
+                login_password = st.text_input("Password", type="password", key="login_password")
+                st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+                submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+                if submitted:
+                    if login_email and login_password:
+                        try:
+                            res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
+                            st.session_state.logged_in = True
+                            st.session_state.user_email = res.user.email
+                            if res.session:
+                                st.session_state.access_token = res.session.access_token
+                                st.session_state.refresh_token = res.session.refresh_token
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Login failed: {e}")
+                    else:
+                        st.warning("Please enter email and password.")
 
         with tab2:
-            st.markdown('<div class="section-header"><h2>Register New Executive</h2></div>', unsafe_allow_html=True)
-            reg_email = st.text_input("Email", key="reg_email")
-            reg_password = st.text_input("Password", type="password", key="reg_password")
-            if st.button("Sign Up", type="primary"):
-                if reg_email and reg_password:
-                    try:
-                        res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
-                        st.success("Registration successful! You can now log in using the Login tab.")
-                    except Exception as e:
-                        st.error(f"Registration failed: {e}")
-                else:
-                    st.warning("Please enter email and password.")
+            st.markdown("""
+            <div style="text-align: center; padding: 20px 0;">
+                <i class="fa-solid fa-user-plus" style="font-size: 32px; color: #34d399; margin-bottom: 16px;"></i>
+                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Create Account</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Register for executive access</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.form("register_form", border=False):
+                reg_email = st.text_input("Email Address", key="reg_email")
+                reg_password = st.text_input("Password", type="password", key="reg_password")
+                st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+                submitted_reg = st.form_submit_button("Sign Up", type="primary", use_container_width=True)
+                if submitted_reg:
+                    if reg_email and reg_password:
+                        try:
+                            res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
+                            st.success("Registration successful! You can now log in using the Login tab.")
+                        except Exception as e:
+                            st.error(f"Registration failed: {e}")
+                    else:
+                        st.warning("Please enter email and password.")
 
 
 def sidebar():
@@ -902,11 +922,23 @@ def sidebar():
         ]
 
         for p_name, p_icon in pages:
-            btn_type = "primary" if st.session_state.current_page == p_name else "secondary"
-            if st.button(p_name, icon=p_icon, type=btn_type, use_container_width=True):
+            if st.button(p_name, icon=p_icon, use_container_width=True):
                 st.session_state.current_page = p_name
                 st.session_state.show_profile = False
                 st.rerun()
+
+        # Dynamically inject CSS to highlight the active button by its exact DOM index
+        active_idx = [p[0] for p in pages].index(st.session_state.current_page) + 2
+        st.markdown(f"""
+        <style>
+            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div.element-container:nth-child({active_idx}) button {{
+                font-weight: 600 !important;
+                background-color: rgba(56,189,248,0.1) !important;
+                color: #38bdf8 !important;
+                border-left: 3px solid #38bdf8 !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
 
         page = st.session_state.current_page
 
@@ -1022,12 +1054,10 @@ def page_overview(df, call_log_proc, churn_full=None):
     # ── Top Suggested Churn Reasons (from model outputs) ─────────
     if churn_full is not None and 'Suggested_Churn_Reason' in churn_full.columns:
         try:
-            mapped_reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].dropna().astype(str).apply(
-                normalize_reason_label)
+            mapped_reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].dropna().astype(str).apply(normalize_reason_label)
             reasons = mapped_reasons.value_counts().reset_index()
             reasons.columns = ['Reason', 'Count']
-            #reasons = churn_full[churn_full['Churn'] == 1]['Suggested_Churn_Reason'].value_counts().reset_index()
-            #reasons.columns = ['Reason', 'Count']
+
             if not reasons.empty:
                 st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>', unsafe_allow_html=True)
                 fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count', color_continuous_scale=['#f87171','#fbbf24','#60a5fa'])
@@ -1949,26 +1979,22 @@ def page_model_performance(df, model_data):
     churned_df = df[df['Churn'] == 1].copy()
     active_df  = df[df['Churn'] == 0].copy()
 
-    r1, r2, r3 = st.columns(3)
+    r1, r2, r3, r4 = st.columns(4)
 
     with r1:
-        st.markdown("""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> Zero Payment</div>
-        """, unsafe_allow_html=True)
-        zero_pay = (churned_df['Paid_amount'] == 0).sum()
-        pct = zero_pay / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown("""<div class="candidate-card">
+                       <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> No interest</div>""", unsafe_allow_html=True)
+        no_int = churned_df.get('has_no_interest', pd.Series([0]*len(churned_df))).sum() if 'has_no_interest' in churned_df.columns else 0
+        pct = no_int / len(churned_df) * 100 if len(churned_df) > 0 else 0
         st.markdown(f"""
-            <div style="font-size:32px; font-weight:800; color:#f87171;">{zero_pay}</div>
-            <div style="color:#64748b; font-size:13px;">churned with ₹0 paid ({pct:.0f}%)</div>
-            <div style="margin-top:10px; font-size:12px; color:#475569;">Most churned candidates made no payment at all — a strong churn signal.</div>
+            <div style="font-size:32px; font-weight:800; color:#fbbf24;">{int(no_int)}</div>
+            <div style="color:#64748b; font-size:13px;">churned had no interest ({pct:.0f}%)</div>
+            <div style="margin-top:10px; font-size:12px; color:#475569;">Churned candidates made initial payment - but no longer interested, they may have attended or not attended the induction session.</div>
         </div>""", unsafe_allow_html=True)
 
     with r2:
-        st.markdown("""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;"><i class="fa-solid fa-phone-slash"></i> No Response Pattern</div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="candidate-card">
+                       <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;"><i class="fa-solid fa-phone-slash"></i> No Response Pattern</div>""", unsafe_allow_html=True)
         no_resp = churned_df.get('has_no_response', pd.Series([0]*len(churned_df))).sum() if 'has_no_response' in churned_df.columns else 0
         pct2 = no_resp / len(churned_df) * 100 if len(churned_df) > 0 else 0
         st.markdown(f"""
@@ -1978,17 +2004,26 @@ def page_model_performance(df, model_data):
         </div>""", unsafe_allow_html=True)
 
     with r3:
-        st.markdown("""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#a78bfa; margin-bottom:12px;"><i class="fa-solid fa-user-xmark"></i> Not Attended Induction</div>
-        """, unsafe_allow_html=True)
-        not_attended = (churned_df['Induction_Session'] == 'NotAttended').sum() if 'Induction_Session' in churned_df.columns else 0
-        pct3 = not_attended / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown("""<div class="candidate-card">
+                       <div style="font-size:13px; font-weight:700; color:#10b981; margin-bottom:12px;"><i class="fa-solid fa-money-bill-wave"></i> Financial Issue</div>""", unsafe_allow_html=True)
+        fin_issue = churned_df.get('has_payment_discussion', pd.Series([0]*len(churned_df))).sum() if 'has_payment_discussion' in churned_df.columns else 0
+        pct_fin = fin_issue / len(churned_df) * 100 if len(churned_df) > 0 else 0
         st.markdown(f"""
-            <div style="font-size:32px; font-weight:800; color:#a78bfa;">{not_attended}</div>
-            <div style="color:#64748b; font-size:13px;">churned skipped induction ({pct3:.0f}%)</div>
-            <div style="margin-top:10px; font-size:12px; color:#475569;">Skipping the induction session is a key early warning sign for churn.</div>
+        <div style="font-size:32px; font-weight:800; color:#f87171;">{int(fin_issue)}</div>
+        <div style="color:#64748b; font-size:13px;">Churned with payment discussion ({pct_fin:.0f}%)</div>
+        <div style="margin-top:10px; font-size:12px; color:#475569;">Candidates who had financial concerns or payment-related discussions before churning.</div>
         </div>""", unsafe_allow_html=True)
+
+    with r4:
+        st.markdown("""<div class="candidate-card">
+                       <div style="font-size:13px; font-weight:700; color:#3b82f6; margin-bottom:12px;"><i class="fa-solid fa-graduation-cap"></i> Joined Another Institution</div>""", unsafe_allow_html=True)
+        joined_other = churned_df.get('joined_another', pd.Series([0]*len(churned_df))).sum() if 'joined_another' in churned_df.columns else 0
+        pct_joined = joined_other / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown(f"""
+        <div style="font-size:32px; font-weight:800; color:#f87171;">{int(joined_other)}</div>
+        <div style="color:#64748b; font-size:13px;">Churned to join another institute ({pct_joined:.0f}%)</div>
+        <div style="margin-top:10px; font-size:12px; color:#475569;">Candidates who chose to enroll at a competitor institution instead.</div>
+        </div>""", unsafe_allow_html=True)        
 
     # ── Model Comparison Table (from model.py's logic) ──
     st.markdown('<div class="section-header"><h2><i class="fa-solid fa-trophy"></i> Algorithm Comparison (Reference)</h2></div>', unsafe_allow_html=True)

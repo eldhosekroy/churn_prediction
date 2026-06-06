@@ -1,7 +1,7 @@
 Candidate_ID,Executive_ID,Call_Date,Call_Time,Call_Duration,Call_Remarks
 C0001,E001,10-03-2026,10:05,3:12,Intro call candidate interested
 C0001,E001,12-03-2026,10:15,5:32,Follow up payment query answered
-C0001,E001,14-03-2026,11:00,4:00,Post confirmation document request
+C0001,E001,14-03-2026,11:00,4:00,No confirmation about joining
 C0002,E002,13-03-2026,14:05,0:45,No response left voicemail
 C0002,E002,16-03-2026,10:30,2:10,Second attempt no pickup
 C0003,E003,24-02-2026,11:00,8:00,Initial technical discussion
@@ -31,7 +31,7 @@ C0011,E001,09-02-2026,9:50,6:00,Intro to cybersecurity module
 C0011,E001,10-02-2026,10:00,3:00,Clarified syllabus and projects
 C0011,E001,11-02-2026,10:10,9:05,Discussed cybersecurity module and placement
 C0012,E002,31-03-2026,14:00,2:50,Initial contact for UI UX
-C0012,E002,02-04-2026,14:35,5:20,Confirmed joining for online batch
+C0012,E002,02-04-2026,14:35,5:20,Not interested any more
 C0013,E003,03-02-2026,11:00,0:20,Intro call no pickup
 C0013,E003,05-02-2026,11:45,0:40,Not reachable call dropped
 C0014,E004,20-03-2026,15:00,5:00,Intro and EMI info provided
@@ -81,7 +81,7 @@ C0031,E001,09-03-2026,10:05,2:45,Requested weekend batch info
 C0032,E002,21-01-2026,9:15,5:00,Intro cloud environment
 C0032,E002,23-01-2026,9:20,6:30,Confirmed cloud lab environment
 C0033,E003,17-03-2026,13:00,3:20,Intro data science syllabus
-C0033,E003,19-03-2026,13:55,4:00,Discussed data science syllabus
+C0033,E003,19-03-2026,13:55,4:00,Chances of joining another instituition
 C0034,E004,04-02-2026,11:00,0:15,Intro call no answer
 C0034,E004,06-02-2026,11:40,0:50,No response call not answered
 C0035,E005,14-04-2026,10:00,3:30,Intro UI UX assignments
@@ -110,7 +110,7 @@ C0044,E004,24-02-2026,15:00,6:20,Intro project timeline
 C0044,E004,27-02-2026,15:40,7:05,Confirmed full stack project timeline
 C0044,E004,28-02-2026,10:00,1:10,Sent project resources
 C0045,E005,13-03-2026,10:00,2:30,Intro portfolio review
-C0045,E005,15-03-2026,10:20,4:50,Discussed UI UX portfolio review
+C0045,E005,15-03-2026,10:20,4:50,Discussed about fees payment
 C0046,E006,17-01-2026,12:00,8:00,Intro payment scholarship
 C0046,E006,19-01-2026,12:30,9:10,Payment and scholarship discussed
 C0047,E007,01-03-2026,16:00,2:25,Intro follow up scheduled
