@@ -543,6 +543,23 @@ st.markdown("""
     /* Dataframe */
     .stDataFrame { border-radius: 12px; overflow: hidden; }
 
+    /* Equal-height profile cards — stretch all Streamlit column children to the tallest column */
+    div[data-testid="stHorizontalBlock"]:has(.candidate-card) {
+        align-items: stretch;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.candidate-card) > div[data-testid="stColumn"] {
+        display: flex;
+        flex-direction: column;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.candidate-card) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.candidate-card) .candidate-card {
+        flex: 1;
+    }
+
     /* Prediction box */
     .prediction-box-churn {
         background: linear-gradient(135deg, rgba(239,68,68,0.2) 0%, rgba(220,38,38,0.1) 100%);
@@ -1250,74 +1267,197 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
     churn_label = "CHURNED" if row['Churn'] == 1 else "ACTIVE"
     churn_color = "#f87171" if row['Churn'] == 1 else "#34d399"
 
-    pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
-    with pc1:
-        st.markdown(f"""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Personal Info</div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Name:</span> <b style="color:#e2e8f0;">{row.get('Candidate_Name','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">ID:</span> <b style="color:#a78bfa;">{row['Candidate_ID']}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{row.get('Background','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Role:</span> <b style="color:#e2e8f0;">{row.get('Role','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Experience:</span> <b style="color:#e2e8f0;">{row.get('Experience',0)} yrs</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Education:</span> <b style="color:#e2e8f0;">{row.get('Education','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Source:</span> <b style="color:#e2e8f0;">{row.get('Source','N/A')}</b></div>
-            <div style="margin-top:14px; padding:8px 14px; border-radius:8px; background:rgba(0,0,0,0.2); text-align:center;">
-                <span style="color:{churn_color}; font-weight:800; font-size:16px;">{churn_label}</span>
+    # Pre-compute call history HTML
+    if not calls.empty:
+        total_calls = len(calls)
+        avg_duration = calls['Call_Duration'].mean() if 'Call_Duration' in calls.columns else 0
+        call_html = f"""
+            <div style="display:flex; gap:12px; margin-bottom: 16px;">
+                <div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:#60a5fa;">{total_calls}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Total Calls</div>
+                </div>
+                <div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:#34d399;">{avg_duration:.1f}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Avg Duration (min)</div>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+        """
+    else:
+        call_html = "<p style='color:#475569; font-style:italic;'>No call records found.</p>"
+
+    # Pre-compute churn reason & recommendation HTML
+    churn_reason_html = ""
+    if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
+        reason_data = row['Suggested_Churn_Reason']
+        reason_text = reason_data
+        rec_text = ""
+        if isinstance(reason_data, str) and reason_data.startswith("(") and reason_data.endswith(")"):
+            import ast
+            try:
+                parsed = ast.literal_eval(reason_data)
+                if isinstance(parsed, tuple) and len(parsed) >= 2:
+                    reason_text = parsed[0]
+                    rec_text = parsed[1]
+            except Exception:
+                pass
+
+        def clean_dict_str(obj_s):
+            if isinstance(obj_s, str) and (obj_s.startswith('{') or obj_s.startswith('[')):
+                import ast
+                try:
+                    obj = ast.literal_eval(obj_s)
+                    if isinstance(obj, dict):
+                        return "<br>".join([f"&bull; <b>{k}:</b> {v}" for k, v in obj.items()])
+                    elif isinstance(obj, list):
+                        return "<br>".join([f"&bull; {v}" for v in obj])
+                except:
+                    pass
+            return obj_s
+
+        reason_text = clean_dict_str(reason_text)
+        rec_text = clean_dict_str(rec_text)
+
+        churn_reason_html += f"""
+            <div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(239,68,68,0.05) 0%, rgba(239,68,68,0.02) 100%); border:1px solid rgba(239,68,68,0.2); box-shadow: 0 4px 16px rgba(239,68,68,0.05); margin-bottom: 12px;'>
+                <div style="display:flex; align-items:center; margin-bottom: 8px;">
+                    <i class="fa-solid fa-magnifying-glass-chart" style="color:#ef4444; font-size:16px; margin-right:10px;"></i>
+                    <h4 style="margin:0; color:#f8fafc; font-family:'Inter', sans-serif; font-size:14px; font-weight:700;">AI Detected Churn Risk Factor</h4>
+                </div>
+                <div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">
+                    {markdown.markdown(str(reason_text))}
+                </div>
+            </div>
+        """
+        if rec_text:
+            churn_reason_html += f"""
+            <div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(16,185,129,0.02) 100%); border:1px solid rgba(16,185,129,0.2); box-shadow: 0 4px 16px rgba(16,185,129,0.05);'>
+                <div style="display:flex; align-items:center; margin-bottom: 8px;">
+                    <i class="fa-solid fa-wand-magic-sparkles" style="color:#10b981; font-size:16px; margin-right:10px;"></i>
+                    <h4 style="margin:0; color:#f8fafc; font-family:'Inter', sans-serif; font-size:14px; font-weight:700;">AI Retention Recommendation</h4>
+                </div>
+                <div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">
+                    {markdown.markdown(str(rec_text))}
+                </div>
+            </div>
+            """
+
+    pr = row.get('Payment_Ratio', 0) * 100
+
+
+
+    # ── Pre-build Call History card content ───────────────────────
+    if not calls.empty:
+        total_calls = len(calls)
+        avg_duration = calls['Call_Duration'].mean() if 'Call_Duration' in calls.columns else 0
+        call_stats_html = f"""<div style="display:flex; gap:12px; margin-bottom:16px;">
+<div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+<div style="font-size:28px; font-weight:800; color:#60a5fa;">{total_calls}</div>
+<div style="font-size:12px; color:#94a3b8; margin-top:4px;">Total Calls</div>
+</div>
+<div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+<div style="font-size:28px; font-weight:800; color:#34d399;">{avg_duration:.1f}</div>
+<div style="font-size:12px; color:#94a3b8; margin-top:4px;">Avg Duration (min)</div>
+</div>
+</div>"""
+    else:
+        call_stats_html = "<p style='color:#475569; font-style:italic;'>No call records found.</p>"
+
+    # ── Pre-build AI churn reason + recommendation HTML ────────────
+    churn_insights_html = ""
+    if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
+        reason_data = row['Suggested_Churn_Reason']
+        reason_text = reason_data
+        rec_text = ""
+        if isinstance(reason_data, str) and reason_data.startswith("(") and reason_data.endswith(")"):
+            import ast
+            try:
+                parsed = ast.literal_eval(reason_data)
+                if isinstance(parsed, tuple) and len(parsed) >= 2:
+                    reason_text = parsed[0]
+                    rec_text = parsed[1]
+            except Exception:
+                pass
+
+        def clean_dict_str(obj_s):
+            if isinstance(obj_s, str) and (obj_s.startswith('{') or obj_s.startswith('[')):
+                import ast
+                try:
+                    obj = ast.literal_eval(obj_s)
+                    if isinstance(obj, dict):
+                        return "<br>".join([f"&bull; <b>{k}:</b> {v}" for k, v in obj.items()])
+                    elif isinstance(obj, list):
+                        return "<br>".join([f"&bull; {v}" for v in obj])
+                except:
+                    pass
+            return obj_s
+
+        reason_text = clean_dict_str(reason_text)
+        rec_text = clean_dict_str(rec_text)
+
+        churn_insights_html += f"""<div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(239,68,68,0.05) 0%, rgba(239,68,68,0.02) 100%); border:1px solid rgba(239,68,68,0.2); box-shadow:0 4px 16px rgba(239,68,68,0.05); margin-bottom:12px;'>
+<div style="display:flex; align-items:center; margin-bottom:8px;">
+<i class="fa-solid fa-magnifying-glass-chart" style="color:#ef4444; font-size:16px; margin-right:10px;"></i>
+<h4 style="margin:0; color:#f8fafc; font-family:'Inter',sans-serif; font-size:14px; font-weight:700;">AI Detected Churn Risk Factor</h4>
+</div>
+<div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">{markdown.markdown(str(reason_text))}</div>
+</div>"""
+        if rec_text:
+            churn_insights_html += f"""<div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(16,185,129,0.02) 100%); border:1px solid rgba(16,185,129,0.2); box-shadow:0 4px 16px rgba(16,185,129,0.05);'>
+<div style="display:flex; align-items:center; margin-bottom:8px;">
+<i class="fa-solid fa-wand-magic-sparkles" style="color:#10b981; font-size:16px; margin-right:10px;"></i>
+<h4 style="margin:0; color:#f8fafc; font-family:'Inter',sans-serif; font-size:14px; font-weight:700;">AI Retention Recommendation</h4>
+</div>
+<div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">{markdown.markdown(str(rec_text))}</div>
+</div>"""
+
+    # ── Render all three columns ────────────────────────────────────
+    pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
+    card_style = "height:100%; min-height:500px; display:flex; flex-direction:column; justify-content:space-between;"
+
+    with pc1:
+        st.markdown(f"""<div class="candidate-card" style="{card_style}">
+<div>
+<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Personal Info</div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Name:</span> <b style="color:#e2e8f0;">{row.get('Candidate_Name','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">ID:</span> <b style="color:#a78bfa;">{row['Candidate_ID']}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{row.get('Background','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Role:</span> <b style="color:#e2e8f0;">{row.get('Role','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Experience:</span> <b style="color:#e2e8f0;">{row.get('Experience',0)} yrs</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Education:</span> <b style="color:#e2e8f0;">{row.get('Education','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Source:</span> <b style="color:#e2e8f0;">{row.get('Source','N/A')}</b></div>
+</div>
+<div style="margin-top:14px; padding:10px 14px; border-radius:8px; background:rgba(0,0,0,0.2); text-align:center;">
+<span style="color:{churn_color}; font-weight:800; font-size:16px;">{churn_label}</span>
+</div>
+</div>""", unsafe_allow_html=True)
 
     with pc2:
-        pr = row.get('Payment_Ratio', 0) * 100
-        st.markdown(f"""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Course & Payment</div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Course:</span> <b style="color:#e2e8f0;">{row.get('Course','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Stream:</span> <b style="color:#e2e8f0;">{row.get('Stream','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Mode:</span> <b style="color:#e2e8f0;">{row.get('Mode','N/A')}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Total Fee:</span> <b style="color:#fbbf24;">₹{row.get('Total_Amount',0):,.0f}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Paid:</span> <b style="color:#34d399;">₹{row.get('Paid_amount',0):,.0f}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Outstanding:</span> <b style="color:#f87171;">₹{row.get('Outstanding_Amount',0):,.0f}</b></div>
-            <div style="margin-bottom:8px;"><span style="color:#64748b;">Pay Method:</span> <b style="color:#e2e8f0;">{row.get('Payment_Method','N/A')}</b></div>
-            <div style="margin-top:8px; background:rgba(0,0,0,0.3); border-radius:6px; height:8px; overflow:hidden;">
-                <div style="width:{min(pr,100):.0f}%; background:linear-gradient(90deg,#6366f1,#34d399); height:100%; border-radius:6px;"></div>
-            </div>
-            <div style="font-size:11px; color:#64748b; margin-top:4px;">{pr:.1f}% paid</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="candidate-card" style="{card_style}">
+<div>
+<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Course &amp; Payment</div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Course:</span> <b style="color:#e2e8f0;">{row.get('Course','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Stream:</span> <b style="color:#e2e8f0;">{row.get('Stream','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Mode:</span> <b style="color:#e2e8f0;">{row.get('Mode','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Total Fee:</span> <b style="color:#fbbf24;">₹{row.get('Total_Amount',0):,.0f}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Paid:</span> <b style="color:#34d399;">₹{row.get('Paid_amount',0):,.0f}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Outstanding:</span> <b style="color:#f87171;">₹{row.get('Outstanding_Amount',0):,.0f}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Pay Method:</span> <b style="color:#e2e8f0;">{row.get('Payment_Method','N/A')}</b></div>
+</div>
+<div>
+<div style="margin-top:8px; background:rgba(0,0,0,0.3); border-radius:6px; height:8px; overflow:hidden;">
+<div style="width:{min(pr,100):.0f}%; background:linear-gradient(90deg,#6366f1,#34d399); height:100%; border-radius:6px;"></div>
+</div>
+<div style="font-size:11px; color:#64748b; margin-top:4px;">{pr:.1f}% paid</div>
+</div>
+</div>""", unsafe_allow_html=True)
 
     with pc3:
-        st.markdown(f"""
-    <div class="candidate-card">
-        <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Call History</div>
-    """, unsafe_allow_html=True)
-    
-        if not calls.empty:
-            total_calls = len(calls)
-            avg_duration = calls['Call_Duration'].mean() if 'Call_Duration' in calls.columns else 0
-        
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"""
-                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; text-align:center;">
-                    <div style="font-size:28px; font-weight:800; color:#3b82f6;">{total_calls}</div>
-                    <div style="font-size:13px; color:#64748b; margin-top:5px;">Total Calls</div>
-                    </div>""", unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"""
-                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; text-align:center;">
-                    <div style="font-size:28px; font-weight:800; color:#10b981;">{avg_duration:.1f}</div>
-                    <div style="font-size:13px; color:#64748b; margin-top:5px;">Avg Duration (min)</div>
-                    </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown("<p style='color:#475569;'>No call records found.</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Show suggested churn reason for this candidate if available
-        if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
-            st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(248,113,113,0.06);'>"
-                        f"<b>Suggested Churn Reason:</b> {row['Suggested_Churn_Reason']}</div>", unsafe_allow_html=True)
+        st.markdown(f"""<div class="candidate-card" style="{card_style}; justify-content:flex-start;">
+<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Call History</div>
+{call_stats_html}
+{churn_insights_html}
+</div>""", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
