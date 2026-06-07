@@ -1418,7 +1418,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
     with pc1:
         st.markdown(f"""<div class="candidate-card" style="{card_style}">
 <div>
-<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Personal Info</div>
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Personal Info</div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">Name:</span> <b style="color:#e2e8f0;">{row.get('Candidate_Name','N/A')}</b></div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">ID:</span> <b style="color:#a78bfa;">{row['Candidate_ID']}</b></div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{row.get('Background','N/A')}</b></div>
@@ -1435,7 +1435,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
     with pc2:
         st.markdown(f"""<div class="candidate-card" style="{card_style}">
 <div>
-<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Course &amp; Payment</div>
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Course &amp; Payment</div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">Course:</span> <b style="color:#e2e8f0;">{row.get('Course','N/A')}</b></div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">Stream:</span> <b style="color:#e2e8f0;">{row.get('Stream','N/A')}</b></div>
 <div style="margin-bottom:10px;"><span style="color:#64748b;">Mode:</span> <b style="color:#e2e8f0;">{row.get('Mode','N/A')}</b></div>
@@ -1454,7 +1454,7 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
 
     with pc3:
         st.markdown(f"""<div class="candidate-card" style="{card_style}; justify-content:flex-start;">
-<div style="font-size:15px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Call History</div>
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-solid fa-phone-flip" style="color:#f43f5e; margin-right:8px;"></i> Call History</div>
 {call_stats_html}
 {churn_insights_html}
 </div>""", unsafe_allow_html=True)
