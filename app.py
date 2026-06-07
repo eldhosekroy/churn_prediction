@@ -1289,18 +1289,31 @@ def page_candidate_explorer(df, call_log_proc, executive_profile, churn_full=Non
 
     with pc3:
         st.markdown(f"""
-        <div class="candidate-card">
-            <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Call History ({len(calls)} calls)</div>
-        """, unsafe_allow_html=True)
+    <div class="candidate-card">
+        <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Call History</div>
+    """, unsafe_allow_html=True)
+    
         if not calls.empty:
-            calls_disp = calls[['Call_Date','Call_Duration','Call_Remarks']].copy()
-            calls_disp.columns = ['Date', 'Duration (min)', 'Remarks']
-            calls_disp['Date'] = calls_disp['Date'].dt.strftime('%d %b %Y')
-            st.dataframe(calls_disp.reset_index(drop=True), use_container_width=True, height=220)
+            total_calls = len(calls)
+            avg_duration = calls['Call_Duration'].mean() if 'Call_Duration' in calls.columns else 0
+        
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:#3b82f6;">{total_calls}</div>
+                    <div style="font-size:13px; color:#64748b; margin-top:5px;">Total Calls</div>
+                    </div>""", unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:#10b981;">{avg_duration:.1f}</div>
+                    <div style="font-size:13px; color:#64748b; margin-top:5px;">Avg Duration (min)</div>
+                    </div>""", unsafe_allow_html=True)
         else:
             st.markdown("<p style='color:#475569;'>No call records found.</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
+        
         # Show suggested churn reason for this candidate if available
         if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
             st.markdown(f"<div style='margin-top:12px; padding:12px; border-radius:8px; background:rgba(248,113,113,0.06);'>"
@@ -1616,7 +1629,7 @@ def page_live_predictor(df, model_data, churn_full=None):
         experience     = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
         career_gap     = st.number_input("Career Gap (years)", 0, 10, 0, key="p_gap")
         total_amount   = st.number_input("Total Course Fee (₹)", 10000, 200000, 60000, step=5000, key="p_ta")
-        paid_amount    = st.number_input("Amount Paid (₹)", 0, 200000, 0, step=5000, key="p_pa")
+        paid_amount    = st.number_input("Amount Paid (₹)", 2000, 200000, 2000, step=10000, key="p_pa")
 
     st.markdown('<div class="section-header"><h2>Call History Inputs</h2></div>', unsafe_allow_html=True)
 
@@ -1721,7 +1734,7 @@ def page_live_predictor(df, model_data, churn_full=None):
             'Total_Amount':        total_amount,
             'Paid_amount':         paid_amount,
             'Payment_Ratio':       payment_ratio,
-            'Zero_Payment':        int(paid_amount == 0),
+            'Booking_fee':        int(paid_amount == 2000),
             'Negative_Feedback':   int(str(feedback).strip().lower() == 'negative'),
             'High_Risk_Indicator': int((paid_amount == 0) and (str(feedback).strip().lower() == 'negative')),
             'Days_Since_Induction': 30,
