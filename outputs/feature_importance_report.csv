@@ -1,35 +1,141 @@
 Feature,Importance
-Payment_Ratio,0.23481974240795564
-Paid_amount,0.2027868578427081
-Feedback,0.1324225555752414
-Total_Call_Duration,0.10281625232994192
-Max_Call_Duration,0.09931890562678584
-Avg_Call_Duration,0.06977713028148502
-Induction_Session,0.025706898069962018
-Call_Frequency,0.024554591269759715
-Min_Call_Duration,0.02348226626707762
-High_Risk_Indicator,0.009951420428587857
-Executive_Experience,0.00972083792001125
-Experience,0.008836737206543033
-Source,0.0074727454910705655
-Education,0.007020965657581568
-Payment_Method,0.006085726276856977
-Total_Amount,0.006012577711368504
-Total_Calls,0.005896481473632934
-Negative_Feedback,0.005874115466549192
-Mode,0.0037610212807824696
-Background,0.0034970154542987627
-has_no_response,0.0025123734878741955
-Course,0.002248679676862873
-has_interest,0.0013702137924388558
-Current_status,0.0011540705941647513
-Executive_Team,0.0009847347602251922
-Days_Since_Payment,0.000937124461034686
-Role,0.0005881628022993338
-Stream,0.0003897963868998149
-Career_gap,3.892311309862302e-17
-has_payment_discussion,3.1860052790898047e-17
-has_technical_discussion,1.9189000547829773e-17
-Unique_Executives,0.0
-joined_another,0.0
-has_no_interest,0.0
+Track Interested_Not joined,10.827445685846765
+Track Interested_Python Full stack,5.042000151111728
+Batch Assigned to_2024-01-01 00:00:00,4.3801148371733625
+Batch Assigned to_2026-02-25 00:00:00,4.187254838711068
+Source of lead_Infopark website,3.9368018143505483
+Course_MCA,3.7005414163435946
+Source of lead_Indeed,3.623277085925217
+Batch Assigned to_2026-06-24 00:00:00,3.570777298215639
+Source of lead_Reference,3.0436688864134354
+Track Interested_DS,2.9707733479420537
+Track Interested_DA,2.9253911324411415
+Track Interested_Datascience/DataAnalytics,2.6475781732696073
+Batch Assigned to_2026-10-24 00:00:00,2.549294175325547
+Source of lead_Digital Marketing (Goat add),2.5227094649784334
+Course_BTECH,2.3409640485616903
+Course_OTHERS,2.303265224661509
+Course_GRADUATED,2.1619819722286504
+Course_MBA,2.0378606001548465
+Batch Assigned to_2026-02-24 00:00:00,1.8385620708179795
+Track Interested_MERN,1.7533225308381983
+Track Interested_Dataanalytics,1.5812174272609765
+final_inferred_status_Not Joined,1.544877168732803
+Batch Assigned to_2026-11-24 00:00:00,1.5381388165697303
+Source of lead_Digital Marketing (Add On),1.464190219728044
+role_Unknown,1.4175623693016834
+Track Interested_Datascience,1.3550612457551217
+Course_BCA,1.3105457004133474
+Batch Assigned to_2026-01-25 00:00:00,1.3010971640622087
+background_Tech,1.2893985530135967
+Track Interested_Data Analytics Intern,1.2752756930059306
+unreachable_not_connected,1.2152877575633876
+Course_BCOM,1.1577240615255566
+Mode of Program Joined_Online,1.1086474036364162
+Mode of Program Joined_Onsite,1.0612220205531748
+Batch Assigned to_2026-03-24 00:00:00,1.0583801122329104
+Mode of Program Joined_Not mentioned,0.9752695774573731
+Course_NOT MENTIONED,0.9613497024434161
+Track Interested_Microsoft AI Engineer,0.9287544378287657
+Course_MSC-IT,0.920479520053912
+Course_BA,0.8972306085108513
+Track Interested_Data Analytics,0.8895231857907191
+Track Interested_Not Mentioned,0.8324458166995511
+background_UNKNOWN,0.7808763641375449
+Track Interested_APRIL DS,0.7794072117463867
+Track Interested_Data Analyst,0.7542320528031761
+looking_for_job_internship,0.6892586048172509
+Batch Assigned to_2026-03-25 00:00:00,0.6434518852962104
+final_inferred_status_Joined,0.6191144977808248
+final_inferred_status_Unclear,0.5908429506097523
+Track Interested_JULY DS,0.5803873816899466
+Batch Assigned to_2026-12-24 00:00:00,0.5714736154219079
+Track Interested_JULY DA,0.5332356280056243
+Track Interested_Data Analytics Fresher,0.5304923892773318
+Track Interested_Data Science,0.4937619834413473
+Batch Assigned to_2026-04-25 00:00:00,0.47246938448529896
+decision_pending,0.4637791348595851
+Course_MTECH,0.4501859207600856
+Year of Graduation,0.4364611112762481
+Source of lead_Naukri Paid,0.4354269638005458
+financial_issue,0.42225407242282087
+Track Interested_Prompt Engineering,0.4221453883179435
+Track Interested_JUNE DA,0.403014792632796
+Track Interested_Data Analyst Intern,0.3996761506032557
+Track Interested_DataAnalyst,0.3675280464054102
+Batch Assigned to_2026-09-24 00:00:00,0.354573688509106
+joined_competitor,0.35363134967947185
+Source of lead_Enquiry,0.33778379880662657
+Source of lead_Job Fair,0.3331977526721792
+Source of lead_IV,0.32891013922942314
+Track Interested_GenAI & Prompt,0.3189728217489594
+Track Interested_Data Science Intern,0.31559477656567414
+Course_BSC-IT,0.30581812241974277
+Followup Email,0.2989312809297459
+Batch Assigned to_2026-04-24 00:00:00,0.27618267889384596
+Track Interested_JUNE,0.24523898494495353
+Batch Assigned to_Not assigned,0.2366564192002823
+Batch Assigned to_2026-05-25 00:00:00,0.22538587545387634
+Track Interested_APRIL MERN,0.2164946073696245
+Source of lead_dm,0.21004466713104836
+Source of lead_Free internship campaign,0.20976558896304304
+no_notes_provided,0.19148269667692677
+Source of lead_DM,0.18062766804125163
+Course_UNSPECIFIED,0.1804733383058804
+Source of lead_infopark,0.17828968577082632
+Batch Assigned to_2026-11-25 00:00:00,0.17553102217235364
+Course_DIPLOMA,0.16441918514561488
+Course_BSC,0.1558756100774382
+Batch Assigned to_2026-07-24 00:00:00,0.15144959695117402
+Track Interested_PEP,0.14858276120974037
+Track Interested_MERN Stack,0.13609333870433687
+role_Student,0.13369297826662374
+Source of lead_Infopark,0.13130423714427064
+Course_MSC,0.11635573208845781
+Source of lead_Website Enquiry,0.11585403930198888
+Track Interested_JUNE DS,0.1104902236654494
+Track Interested_Dataanalyst,0.10299447695538483
+Track Interested_DataAnalytics,0.08041025964972723
+Batch Assigned to_2026-12-25 00:00:00,0.07366442887267229
+Source of lead_Workshop,0.06390433657974784
+Course_MCOM,0.06200922604690371
+Track Interested_UNSPECIFIED,0.05302875262941565
+already_working,0.047729062714574576
+Gender_Male,0.03870228540600188
+Batch Assigned to_2026-10-25 00:00:00,0.03854348519012985
+Track Interested_Gen Ai & Prompt Engineering Intern,0.03630627697867341
+Track Interested_Datascience Internship for freshers,0.034915314053316326
+Track Interested_Data analyst,0.031865189957710434
+Semester,0.028104736584739713
+Batch Assigned to_First Choice,0.02237954164786405
+Source of lead_SEO,0.02096927020949025
+Source of lead_Carryover,0.014165602533448594
+Batch Assigned to_2026-05-24 00:00:00,0.014094073465854737
+Source of lead_Infopark  website,0.013117248877550058
+Track Interested_Gen Ai & Prompt Engineering,0.011933933387907785
+Track Interested_ROUNDED DS&GENAI PROFESSIONAL,0.01098852490614541
+Track Interested_Dataanlytics,0.006459605737133386
+Track Interested_GEN AI&PROMPT ENG,0.006038889098880428
+Source of lead_Webinar,0.0042562711215874145
+Source of lead_Seminar,0.0024365338612139507
+Source of lead_OLX,0.0017363904569545462
+Course_DIPLOMA-IT,0.0015667317834897783
+Source of lead_Social media,0.0012282789757086811
+Course_PLUS TWO,0.0011337834159506203
+Source of lead_Indeed Paid,0.0009700806790120435
+Source of lead_Naukri Ad posting,0.0006314875239911005
+Batch Assigned to_2026-08-25 00:00:00,0.0004688354993031838
+Source of lead_free internship,0.00045292813454577037
+Source of lead_college referal,0.00032215027954859716
+Course_MA,0.00029350781995257863
+Source of lead_Linkedin,0.0002804521043059888
+Experience,0.0
+Test,0.0
+not_interested,0.0
+Invoice_binary,0.0
+role_Professional,0.0
+Source of lead_Dm,0.0
+Track Interested_JULY MERN,0.0
+Mode of Program Joined_online hybrid,0.0
+Batch Assigned to_2026-08-24 00:00:00,0.0
+Batch Assigned to_2026-07-25 00:00:00,0.0
