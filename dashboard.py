@@ -1,12 +1,16 @@
-import numpy as np
+"""
+AI-Powered Candidate Churn Prediction & Reason Analysis Dashboard
+=================================================================
+Author: Dashboard Team Member
+This file is NEW - it does NOT modify any existing team files.
+It reads: Candidate Profile.csv, Call log.csv, Executive Profile.csv, churn_prediction_model.pkl
+"""
+
 import streamlit as st
 import pandas as pd
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-from collections import Counter 
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import numpy as np
 import pickle
+import markdown
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -58,14 +62,291 @@ if url and key and url != "your-supabase-url":
         print(f"Failed to initialize Supabase: {e}")
 
 
+def parse_gemini_response(response_data):
+    if not isinstance(response_data, dict):
+        return None
+
+    text = None
+    if 'output' in response_data:
+        output = response_data['output']
+        if isinstance(output, list) and output:
+            first = output[0]
+            if isinstance(first, dict):
+                content = first.get('content', first)
+            else:
+                content = first
+            if isinstance(content, list):
+                text = ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in content)
+            else:
+                text = str(content)
+    elif 'choices' in response_data:
+        choices = response_data['choices']
+        if isinstance(choices, list) and choices:
+            choice = choices[0]
+            text = choice.get('message', {}).get('content') or choice.get('text')
+    return text
 
 
+def parse_json_like(text):
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    result = {}
+    for line in text.splitlines():
+        if ':' in line:
+            key, value = line.split(':', 1)
+            result[key.strip().lower()] = value.strip()
+    return result if result else None
 
- 
 
-ARTIFACTS_PATH = './output'
+def normalize_reason_label(text):
+    if not text:
+        return None
+    normalized = text.strip().lower()
+    mappings = {
+        'Financial issues': ['financial issues', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
+        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
+        'Joined another institution': ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
+        'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
+        'Other': ['other', 'unknown', 'unclear']
+    }
 
- 
+    for label, keywords in mappings.items():
+        if any(k in normalized for k in keywords):
+            return label
+
+    normalized_single = normalized.replace('\n', ' ').strip()
+    return normalized_single.title() if normalized_single else 'Other'
+
+
+def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    details = []
+    if isinstance(candidate_info, dict):
+        details.append("Candidate details:")
+        for key in ['Source', 'Education', 'Background', 'Role', 'Current_status', 'Stream', 'Course', 'Mode', 'Payment_Method', 'Executive_Team', 'Induction_Session', 'Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator', 'Days_Since_Payment', 'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration', 'Call_Frequency', 'Executive_Experience', 'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']:
+            if key in candidate_info and candidate_info[key] is not None:
+                details.append(f"- {key}: {candidate_info[key]}")
+    else:
+        details = ["Candidate details: Not available"]
+
+    details.append("\nCall details:")
+    details.append(f"- Feedback: {feedback_text or 'None'}")
+    details.append(f"- Call remarks: {remarks_text or 'None'}")
+    if transcript_text:
+        details.append(f"- Call transcript: {transcript_text}")
+
+    prompt = (
+            "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
+            "Your task is to analyze candidate profile details and communication logs context to formulate a concise, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
+            "Value of the 'reason' key in the output JSON MUST be a comprehensive, detailed sentence or maximum three sentences explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, and remarks.\n"
+            "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
+            "Strict Format Constraint:\n"
+            "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
+            "Candidate Data context:\n" + "\n".join(details)
+    )
+    return prompt
+
+
+def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY') or os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return {'status': 'Gemini unavailable', 'error': 'API key missing'}
+
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+    
+    clean_model_name = model_name
+    if clean_model_name.startswith('models/'):
+        clean_model_name = clean_model_name[len('models/'):]
+
+    # If a prohibited/legacy model is specified, fall back to the modern gemini-2.5-flash
+    if any(m in clean_model_name.lower() for m in ['1.5-flash', '1.5-pro', 'gemini-pro', '2.0-flash', '2.0-pro']):
+        clean_model_name = 'gemini-2.5-flash'
+
+    prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+
+    import time
+    last_err = None
+    response_text = None
+
+    # Implement exponential backoff retries to combat transient 503 errors
+    for attempt in range(1, 4):
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(clean_model_name)
+
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            response_text = response.text
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+
+    if last_err:
+        return {'status': 'Fallback heuristic', 'error': str(last_err)}
+
+    if not response_text:
+        return {'status': 'Fallback heuristic', 'error': 'Empty response from model'}
+
+    raw_text = response_text.strip()
+    if raw_text.startswith("```"):
+        lines = raw_text.splitlines()
+        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+            raw_text = "\n".join(lines[1:-1])
+
+    parsed = parse_json_like(raw_text)
+    if parsed is None:
+        parsed = {}
+
+    # Extract detailed reason directly, do not map it into a 1-word label here
+    reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+    return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
+
+def heuristic_recommendation(reason_label):
+    mapping = {
+        'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
+        'Lack of interest': 'Re-engage with personalized course benefits, clarify learning outcomes, and offer a second consultation call.',
+        'Joined another institution': 'Reach out with retention incentives, compare program strengths, and propose a unique value-added offer.',
+        'Communication gaps': 'Increase outreach frequency, confirm contact details, and assign a dedicated counselor for follow-up.',
+        'Other': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.'
+    }
+    return mapping.get(reason_label, mapping['Other'])
+
+def call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    groq_api_key = os.getenv('GROQ_API_KEY')
+    if not groq_api_key:
+        return {'status': 'Groq unavailable', 'error': 'Groq API key missing'}
+    try:
+        from groq import Groq
+    except ImportError:
+        return {'status': 'Groq unavailable', 'error': 'groq package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = Groq(api_key=groq_api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are an expert HR analyst analyzing candidate churn data. Respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.3,
+            max_tokens=256
+        )
+        response_text = chat_completion.choices[0].message.content.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Groq)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'Groq failed', 'error': str(e)}
+
+
+def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    hf_api_key = os.getenv('HUGGINGFACE_API_KEY') or os.getenv('HF_TOKEN')
+    if not hf_api_key:
+        return {'status': 'HuggingFace unavailable', 'error': 'Hugging Face API key missing'}
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError:
+        return {'status': 'HuggingFace unavailable', 'error': 'huggingface_hub package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = InferenceClient(api_key=hf_api_key)
+        response = client.text_generation(
+            prompt=prompt + "\nJSON output:",
+            model="mistralai/Mistral-7B-Instruct-v0.2",
+            max_new_tokens=256,
+            temperature=0.3
+        )
+        response_text = response.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Hugging Face)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'HuggingFace failed', 'error': str(e)}
+
+def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None, preferred_ai="Auto"):
+    errors = []
+    
+    if preferred_ai in ["Auto (Fallback)", "Gemini"]:
+        api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
+            return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
+        if api_response and 'error' in api_response:
+            errors.append(f"Gemini: {api_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Groq"]:
+        groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
+            return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
+        if groq_response and 'error' in groq_response:
+            errors.append(f"Groq: {groq_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Hugging Face"]:
+        hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
+            return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
+        if hf_response and 'error' in hf_response:
+            errors.append(f"Hugging Face: {hf_response['error']}")
+
+    error_context = " | ".join(errors) if errors else 'Unknown AI failure'
+    text = ''
+    if remarks_text:
+        text += str(remarks_text).lower() + ' '
+    if feedback_text:
+        text += str(feedback_text).lower()
+
+    if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
+         reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
+         label_key = 'Financial issues'
+    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
+    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+         reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
+         label_key = 'Joined another institution'
+    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+         reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
+         label_key = 'Communication gaps'
+    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
+    else:
+         reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
+         label_key = 'Other'
+
+    return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
+
+
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
@@ -340,7 +621,97 @@ st.markdown("""
     [data-testid="stMetricDelta"] { font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
- 
+
+
+# ─────────────────────────────────────────────
+# DATA LOADING & PREPROCESSING
+# (Replicates model.py logic — files untouched)
+# ─────────────────────────────────────────────
+
+INPUT_DIR = "./data/"
+OUTPUT_DIR = "./output/"
+
+@st.cache_data
+def load_data():
+    # Load the processed dataset with inferred churn and reasons
+    df_path = os.path.join(OUTPUT_DIR, "candidates_with_suggested_reasons.csv")
+    notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
+    
+    if os.path.exists(df_path):
+        df = pd.read_csv(df_path)
+    else:
+        df = pd.DataFrame()
+        
+    if os.path.exists(notes_path):
+        notes = pd.read_csv(notes_path)
+    else:
+        notes = pd.DataFrame()
+        
+    return df, notes
+
+@st.cache_data
+def load_churn_reasons():
+    # Deprecated/Not needed anymore, returning same df for compatibility
+    return None, None
+
+@st.cache_data
+def preprocess(df, notes):
+    # Data is already preprocessed by churn_app.py.
+    # We just ensure certain columns exist to avoid KeyError in UI
+    
+    if not df.empty:
+        df['Contact Name'] = df['Contact Name'].fillna('Unknown')
+        df['Course'] = df['Course'].fillna('Unknown')
+        df['Source of lead'] = df['Source of lead'].fillna('Unknown')
+        df['Mode of Program Joined'] = df['Mode of Program Joined'].fillna('Unknown')
+        df['background'] = df['background'].fillna('Unknown')
+        df['role'] = df['role'].fillna('Unknown')
+        df['Invoice'] = df['Invoice'].fillna('No Invoice')
+        
+        # Payment mapping (if needed for legacy UI logic, though we will replace UI)
+        df['Payment_Ratio'] = np.where(df['Invoice'] == 'Paid', 1.0, 0.0)
+        
+    return df, notes
+
+
+@st.cache_resource
+def load_model(model_path, modified_time):
+    try:
+        with open(model_path, "rb") as f:
+            data = pickle.load(f)
+            if 'model_name' not in data and 'model' in data:
+                data['model_name'] = data['model'].__class__.__name__
+            if 'model_display_name' not in data:
+                data['model_display_name'] = data.get('model_name', data['model'].__class__.__name__)
+            if 'balance_method' not in data:
+                data['balance_method'] = 'none'
+            return data
+    except Exception:
+        return None
+
+
+def format_balance_method(balance_method):
+    balance_labels = {
+        'none': 'None',
+        'class_weight': 'Class Weight',
+        'oversample': 'Random Oversampling',
+        'undersample': 'Random Undersampling',
+        'smote': 'SMOTE'
+    }
+    return balance_labels.get(str(balance_method).lower(), str(balance_method))
+
+
+def balance_method_description(balance_method):
+    descriptions = {
+        'none': 'Training used the original class distribution.',
+        'class_weight': 'The model gave more weight to the minority churn class during training.',
+        'oversample': 'The minority churn class was randomly oversampled before training.',
+        'undersample': 'The majority class was randomly undersampled before training.',
+        'smote': 'Synthetic minority samples were generated with SMOTE before training.'
+    }
+    return descriptions.get(str(balance_method).lower(), 'Selected from validation F1 during model training.')
+
+
 # ─────────────────────────────────────────────
 # PLOTLY THEME DEFAULTS
 # ─────────────────────────────────────────────
@@ -471,7 +842,9 @@ def sidebar():
 
         pages = [
             ("Overview", ":material/dashboard:"),
-            ("Notes Analysis", ":material/notes:"),
+            ("Candidate Explorer", ":material/search:"),
+            ("CRM Notes Analysis", ":material/call:"),
+            ("Invoice Analysis", ":material/payments:"),
             ("Live Predictor", ":material/online_prediction:"),
             ("Model Performance", ":material/insights:")
         ]
@@ -501,9 +874,9 @@ def sidebar():
         st.markdown("<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>", unsafe_allow_html=True)
 
         _src = [
-            ("<i class='fa-solid fa-clipboard-list'></i>", "Candidate Profile", ".csv &nbsp;·&nbsp; 50 rows"),
-            ("<i class='fa-solid fa-phone'></i>", "Call Log",           ".csv &nbsp;·&nbsp; 124 rows"),
-            ("<i class='fa-solid fa-user-tie'></i>", "Executive Profile",  ".csv &nbsp;·&nbsp; 10 rows"),
+            ("<i class='fa-solid fa-users'></i>", "Enrolled & Registered", ".xlsx &nbsp;·&nbsp; 1084 rows"),
+            ("<i class='fa-solid fa-clipboard-list'></i>", "CRM All Contacts",  ".xlsx &nbsp;·&nbsp; 1084 rows"),
+            ("<i class='fa-solid fa-file-invoice'></i>", "Notes Processed",  ".csv &nbsp;·&nbsp; 30K+ rows"),
             ("<i class='fa-solid fa-robot'></i>", "Churn Model",        ".pkl &nbsp;·&nbsp; Saved Model"),
         ]
         for _icon, _name, _meta in _src:
@@ -543,7 +916,10 @@ def sidebar():
     return page
 
 
-def page_overview():
+# ─────────────────────────────────────────────
+# PAGE 1 — OVERVIEW
+# ─────────────────────────────────────────────
+def page_overview(df, notes):
     st.markdown("""
     <div class="page-header">
         <h1><i class="fa-solid fa-chart-pie"></i> Executive Overview</h1>
@@ -551,509 +927,663 @@ def page_overview():
     </div>
     """, unsafe_allow_html=True)
 
-    @st.cache_data
-    def load_data():
-     try:
-         enrolled = pd.read_csv(os.path.join(ARTIFACTS_PATH, 'enrolled_processed.csv'))
-         notes = pd.read_csv(os.path.join(ARTIFACTS_PATH, 'notes_processed.csv'))
-         return enrolled, notes
-     except FileNotFoundError:
-         st.error("Data files not found. Please ensure 'enrolled_processed.csv' and 'notes_processed.csv' are in the 'output' directory.")
-         return pd.DataFrame(), pd.DataFrame()
- 
-    enrolled_df, notes_df = load_data()
+    total       = len(df)
+    churned     = df['churn'].sum() if 'churn' in df.columns else 0
+    active      = total - churned
+    churn_rate  = (churned / total * 100) if total > 0 else 0
+    total_notes = len(notes) if notes is not None else 0
 
-# Define conditions for churn
-    conditions = [
-    (enrolled_df['Program Joined'] != 'Not joined') & (enrolled_df['Invoice'] == 'Yes'), # Non-churned (Active with Invoice)
-    (enrolled_df['Program Joined'] == 'Not joined') & (enrolled_df['Invoice'] == 'Yes'), # Churned with Invoice
-    (enrolled_df['Invoice'] == 'No') # Candidates without an invoice, or where invoice status is not 'Yes'
-]
+    # ── KPI Cards ────────────────────────────────
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="kpi-title">Total Candidates</div>
+            <div class="kpi-value kpi-blue" style="color:#60a5fa">{total}</div>
+            <div class="kpi-sub">Enrolled in system</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-check-circle" style="color:#34d399"></i></div>
+            <div class="kpi-title">Active</div>
+            <div class="kpi-value" style="color:#34d399">{active}</div>
+            <div class="kpi-sub">Training joined</div>
+        </div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i></div>
+            <div class="kpi-title">Churned</div>
+            <div class="kpi-value" style="color:#f87171">{int(churned)}</div>
+            <div class="kpi-sub">Did not join training</div>
+        </div>""", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-chart-line" style="color:#fbbf24"></i></div>
+            <div class="kpi-title">Churn Rate</div>
+            <div class="kpi-value" style="color:#fbbf24">{churn_rate:.1f}%</div>
+            <div class="kpi-sub">Of all candidates</div>
+        </div>""", unsafe_allow_html=True)
+    with c5:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-clipboard-list" style="color:#a78bfa"></i></div>
+            <div class="kpi-title">Total CRM Notes</div>
+            <div class="kpi-value" style="color:#a78bfa">{total_notes}</div>
+            <div class="kpi-sub">Across all interactions</div>
+        </div>""", unsafe_allow_html=True)
 
-# Define choices for churn (0 for non-churn, 1 for churn, -1 for other cases)
-    choices = [0, 1, -1]
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    enrolled_df['churn'] = np.select(conditions, choices, default=-1) # Use -1 to denote cases not explicitly 0 or 1
+    # ── Top Suggested Churn Reasons (from model outputs) ─────────
+    if 'Suggested_Churn_Reason' in df.columns:
+        try:
+            unique_churn = df[df['churn'] == 1].drop_duplicates(subset=['Contact Id'])
+            mapped_reasons = unique_churn['Suggested_Churn_Reason'].dropna().astype(str).apply(normalize_reason_label)
+            reasons = mapped_reasons.value_counts().reset_index()
+            reasons.columns = ['Reason', 'Count']
+
+            if not reasons.empty:
+                st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>', unsafe_allow_html=True)
+                fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count', color_continuous_scale=['#f87171','#fbbf24','#60a5fa'])
+                fig_reasons.update_layout(**theme(height=300, showlegend=False))
+                st.plotly_chart(fig_reasons, use_container_width=True)
+        except Exception:
+            pass
+
+    # ── Row 1: Donut + Source ─────────────────────
+    col1, col2 = st.columns([1, 1.6])
+
+    with col1:
+        st.markdown('<div class="section-header"><h2>Churn Distribution</h2></div>', unsafe_allow_html=True)
+        fig = go.Figure(go.Pie(
+            labels=['Active', 'Churned'],
+            values=[active, int(churned)],
+            hole=0.65,
+            marker=dict(colors=[COLOR_ACTIVE, COLOR_CHURN],
+                        line=dict(color='rgba(0,0,0,0)', width=0)),
+            textinfo='percent+label',
+            textfont=dict(size=13, color='#e2e8f0'),
+            hovertemplate="<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>"
+        ))
+        fig.add_annotation(text=f"<b>{churn_rate:.1f}%</b><br>Churn Rate",
+                           x=0.5, y=0.5, showarrow=False,
+                           font=dict(size=15, color='#e2e8f0', family='Inter'))
+        fig.update_layout(**theme(height=310,
+                                  showlegend=True,
+                                  legend=dict(orientation='h', y=-0.1, x=0.25)))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.markdown('<div class="section-header"><h2>Churn by Candidate Source</h2></div>', unsafe_allow_html=True)
+        src = df.groupby(['Source of lead', 'churn']).size().reset_index(name='Count')
+        src['Status'] = src['churn'].map({0: 'Active', 1: 'Churned'})
+        fig2 = px.bar(src, x='Source of lead', y='Count', color='Status',
+                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      barmode='group', text='Count')
+        fig2.update_traces(textfont_size=11, textposition='outside')
+        fig2.update_layout(**theme(height=310, showlegend=True))
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Row 2: Course + Background + Mode ─────────
+    col3, col4, col5 = st.columns(3)
+
+    with col3:
+        st.markdown('<div class="section-header"><h2>By Course</h2></div>', unsafe_allow_html=True)
+        course_churn = df[df['churn'] == 1]['Course'].value_counts().reset_index()
+        course_churn.columns = ['Course', 'Churned']
+        fig3 = px.bar(course_churn, x='Churned', y='Course', orientation='h',
+                      color='Churned', color_continuous_scale=['#4c1d95','#f87171'])
+        fig3.update_layout(**theme(height=280, showlegend=False,
+                                   coloraxis_showscale=False))
+        st.plotly_chart(fig3, use_container_width=True)
+
+    with col4:
+        st.markdown('<div class="section-header"><h2>Background Split</h2></div>', unsafe_allow_html=True)
+        bg = df.groupby(['background', 'churn']).size().reset_index(name='Count')
+        bg['Status'] = bg['churn'].map({0: 'Active', 1: 'Churned'})
+        fig4 = px.pie(bg, names='background', values='Count',
+                      color='background', hole=0.5,
+                      color_discrete_sequence=PALETTE)
+        fig4.update_layout(**theme(height=280, showlegend=True))
+        st.plotly_chart(fig4, use_container_width=True)
+
+    with col5:
+        st.markdown('<div class="section-header"><h2>Training Mode</h2></div>', unsafe_allow_html=True)
+        mode_data = df.groupby(['Mode of Program Joined', 'churn']).size().reset_index(name='Count')
+        mode_data['Status'] = mode_data['churn'].map({0: 'Active', 1: 'Churned'})
+        fig5 = px.bar(mode_data, x='Mode of Program Joined', y='Count', color='Status',
+                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      barmode='stack')
+        fig5.update_layout(**theme(height=280))
+        st.plotly_chart(fig5, use_container_width=True)
+
+    # ── Row 3: Role + Inferred Reason ───────────────
+    col6, col7 = st.columns(2)
+    with col6:
+        st.markdown('<div class="section-header"><h2>Candidate Role vs Churn</h2></div>', unsafe_allow_html=True)
+        ind = df.groupby(['role', 'churn']).size().reset_index(name='Count')
+        ind['Status'] = ind['churn'].map({0: 'Active', 1: 'Churned'})
+        fig6 = px.bar(ind, x='role', y='Count', color='Status',
+                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      barmode='group', text='Count')
+        fig6.update_traces(textfont_size=11, textposition='outside')
+        fig6.update_layout(**theme(height=290))
+        st.plotly_chart(fig6, use_container_width=True)
+
+    with col7:
+        st.markdown('<div class="section-header"><h2>Inferred CRM Feedback vs Churn</h2></div>', unsafe_allow_html=True)
+        fb = df.groupby(['final_inferred_reason', 'churn']).size().reset_index(name='Count')
+        # Limit to top 10 reasons to avoid chart clutter
+        fb = fb.sort_values('Count', ascending=False).head(20)
+        fb['Status'] = fb['churn'].map({0: 'Active', 1: 'Churned'})
+        fig7 = px.bar(fb, x='final_inferred_reason', y='Count', color='Status',
+                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      barmode='group', text='Count')
+        fig7.update_traces(textfont_size=11, textposition='outside')
+        fig7.update_layout(**theme(height=290))
+        st.plotly_chart(fig7, use_container_width=True)
 
 
-    if not enrolled_df.empty:
-     st.subheader("Key Performance Indicators (KPIs)")
- 
-     total_candidates_contacted = 46469 # From CRM dataset analysis in notebook
-     registered_candidates = enrolled_df[enrolled_df['Invoice'] == 'Yes'].shape[0]
-     enrolled_candidates = enrolled_df.shape[0]
-     # Calculate based on Program Joined
-     joined_candidates_count = enrolled_df[enrolled_df['Program Joined'] != 'Not joined'].shape[0]
-     not_joined_candidates_count = enrolled_df[enrolled_df['Program Joined'] == 'Not joined'].shape[0]
- 
-     # Recalculate churned/active based on the notebook's final logic for churn definition
-     # Assuming 'churn' column is in enrolled_df (0=non-churn, 1=churn, -1=not classified)
-     churned_candidates = enrolled_df[enrolled_df['churn'] == 1].shape[0]
-     active_candidates = enrolled_df[enrolled_df['churn'] == 0].shape[0]
- 
-     col1, col2, col3, col4, col5 = st.columns(5)
-     with col1:
-         st.metric(label="Total Contacts (CRM)", value=f"{total_candidates_contacted:,}")
-     with col2:
-         st.metric(label="Enrolled Records", value=f"{enrolled_candidates:,}")
-     with col3:
-         st.metric(label="Registered Candidates (Invoice Yes)", value=f"{registered_candidates:,}")
-     with col4:
-         st.metric(label="Active Candidates (Model Target)", value=f"{active_candidates:,}")
-     with col5:
-         st.metric(label="Churned Candidates (Model Target)", value=f"{churned_candidates:,}")
- 
-     st.subheader("Visualizations")
- 
-#     # Display existing plots from the output directory
-     st.markdown("#### Course Distribution")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'course_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Course distribution plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Churn vs. Active Candidates Distribution")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'churn_active_candidates_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Churn vs. Active candidates distribution plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Candidate Role Distribution")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'role_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Role distribution plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Candidate Background Distribution")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'background_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Background distribution plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Churn by Source of Lead")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'churn_by_source_of_lead.png'))
-     except FileNotFoundError:
-         st.warning("Churn by source of lead plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Churn by Training Mode")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'churn_by_training_mode.png'))
-     except FileNotFoundError:
-         st.warning("Churn by training mode plot not found. Please run the notebook to generate it.")
- 
-     st.markdown("#### Program Growth by Invoice Status Across Years")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'program_growth_by_invoice.png'))
-     except FileNotFoundError:
-         st.warning("Program growth by invoice status plot not found. Please run the notebook to generate it.")
- 
-    else:
-     st.info("No data available to display. Please ensure data processing is complete in the notebook.")
-
-
-#  pages/2_📝_Notes_Analysis.py
- 
-
-def page_note_analysis():
+# ─────────────────────────────────────────────
+# PAGE 2 — CANDIDATE EXPLORER
+# ─────────────────────────────────────────────
+def page_candidate_explorer(df, notes):
     st.markdown("""
     <div class="page-header">
-        <h1><i class="fa-solid fa-clipboard-list"></i> Notes Analysis</h1>
-        <p>Explore candidate notes to understand common themes, inferred statuses, and reasons for churn.</p>
+        <h1><i class="fa-solid fa-magnifying-glass"></i> Candidate Explorer</h1>
+        <p>Browse, filter, and inspect individual candidate records with CRM note history.</p>
     </div>
-    """, unsafe_allow_html=True) 
-    @st.cache_data
-    def load_notes_data():
-        try:
-             # Ensure the 'notes_processed.csv' contains 'cleaned_content', 'inferred_status', 'inferred_reason'
-            notes_df = pd.read_csv(os.path.join(ARTIFACTS_PATH, 'notes_processed.csv'))
-         # Convert 'cleaned_content' back to list of words if it was saved as string representation of list
-            if 'cleaned_content' in notes_df.columns:
-                 notes_df['cleaned_content'] = notes_df['cleaned_content'].apply(eval) # Use eval to convert string list to actual list
-            return notes_df
-        except FileNotFoundError:
-            st.error("Processed notes data not found. Please ensure 'notes_processed.csv' is in the 'output' directory.")
-            return pd.DataFrame()
- 
-    notes_df = load_notes_data()
- 
-    if not notes_df.empty:
-     st.subheader("Top Words in Notes")
-     st.write("Understanding the most frequently used words in candidate notes can highlight common themes.")
- 
-     # Display existing plot
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'top_words_notes.png'))
-     except FileNotFoundError:
-         st.warning("Top words plot not found. Please run the notebook to generate it.")
- 
-     st.subheader("Inferred Status Distribution")
-     st.write("This section shows the distribution of statuses inferred from the notes (Joined, Not Joined, Unclear, Join Later).")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'final_inferred_status_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Final inferred status distribution plot not found. Please run the notebook to generate it.")
- 
- 
-     st.subheader("Inferred Reasons for Not Joining")
-     st.write("A breakdown of the reasons why candidates did not join, as inferred from their notes.")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'inferred_reasons_notes.png'))
-     except FileNotFoundError:
-         st.warning("Inferred reasons for not joining plot not found. Please run the notebook to generate it.")
- 
-     st.subheader("Top Suggested Churn Reasons (Aggregated)")
-     st.write("This chart shows the top reasons why candidates might churn based on aggregated notes.")
-     try:
-         st.image(os.path.join(ARTIFACTS_PATH, 'final_inferred_reason_distribution.png'))
-     except FileNotFoundError:
-         st.warning("Final inferred reason distribution plot not found. Please run the notebook to generate it.")
- 
- 
-     st.subheader("Explore Keywords in Context")
-     st.write("Enter a keyword to see sentences from notes where it appears, providing deeper context.")
- 
-     search_keyword = st.text_input("Enter keyword (e.g., 'internship', 'job', 'finance')", "internship")
-     num_examples = st.slider("Number of example sentences to show", 1, 20, 5)
- 
-     if search_keyword:
-         found_sentences = []
-         for sentences_list in notes_df['sentences'].dropna():
-             # Ensure sentences_list is actually a list (it might be a string representation if not eval'd)
-             if isinstance(sentences_list, str):
-                 try:
-                     sentences_list = eval(sentences_list)
-                 except:
-                     continue # Skip if can't evaluate
- 
-             if isinstance(sentences_list, list):
-                 for sentence in sentences_list:
-                     if search_keyword.lower() in str(sentence).lower():
-                         found_sentences.append(sentence)
- 
-         if found_sentences:
-             st.success(f"Found {len(found_sentences)} sentences containing '{search_keyword}'. Showing top {min(len(found_sentences), num_examples)}:")
-             for i, sentence in enumerate(found_sentences[:num_examples]):
-                 st.markdown(f"- {sentence}")
-         else:
-             st.info(f"No sentences found containing '{search_keyword}'.")
+    """, unsafe_allow_html=True)
+
+    # ── Filters ───────────────────────────────────
+    with st.expander("Filter Candidates", expanded=True):
+        f1, f2, f3, f4, f5 = st.columns(5)
+        with f1:
+            sel_churn = st.selectbox("Churn Status", ["All", "Churned", "Active"], key="f_churn")
+        with f2:
+            sel_source = st.selectbox("Source", ["All"] + sorted(df['Source of lead'].dropna().unique().tolist()), key="f_source")
+        with f3:
+            sel_course = st.selectbox("Course", ["All"] + sorted(df['Course'].dropna().unique().tolist()), key="f_course")
+        with f4:
+            sel_mode = st.selectbox("Mode", ["All"] + sorted(df['Mode of Program Joined'].dropna().unique().tolist()), key="f_mode")
+        with f5:
+            sel_bg = st.selectbox("Background", ["All"] + sorted(df['background'].dropna().unique().tolist()), key="f_bg")
+
+    fdf = df.copy()
+
+    if sel_churn == "Churned": fdf = fdf[fdf['churn'] == 1]
+    elif sel_churn == "Active": fdf = fdf[fdf['churn'] == 0]
+    if sel_source != "All": fdf = fdf[fdf['Source of lead'] == sel_source]
+    if sel_course != "All": fdf = fdf[fdf['Course'] == sel_course]
+    if sel_mode   != "All": fdf = fdf[fdf['Mode of Program Joined']   == sel_mode]
+    if sel_bg     != "All": fdf = fdf[fdf['background'] == sel_bg]
+
+    st.markdown(f"<p style='color:#64748b; font-size:13px;'>Showing <b style='color:#a78bfa'>{len(fdf)}</b> candidates</p>", unsafe_allow_html=True)
+
+    # ── Table ─────────────────────────────────────
+    display_cols = ['Contact Id', 'Contact Name', 'Source of lead', 'Course', 'Mode of Program Joined',
+                    'background', 'role', 'Status', 'Invoice', 'churn', 'Suggested_Churn_Reason']
+    display_cols = [c for c in display_cols if c in fdf.columns]
+
+    tbl = fdf[display_cols].copy()
+    tbl['churn'] = tbl['churn'].map({0: 'Active', 1: 'Churned'})
+
+    st.dataframe(
+        tbl.reset_index(drop=True),
+        use_container_width=True,
+        height=280,
+        column_config={
+            "Contact Id":             st.column_config.TextColumn("ID", width="small"),
+            "Contact Name":           st.column_config.TextColumn("Name"),
+            "Source of lead":         st.column_config.TextColumn("Source"),
+            "Mode of Program Joined": st.column_config.TextColumn("Mode"),
+            "background":             st.column_config.TextColumn("Background"),
+            "churn":                  st.column_config.TextColumn("Churn Status"),
+            "Invoice":                st.column_config.TextColumn("Invoice Status"),
+            "Suggested_Churn_Reason": st.column_config.TextColumn("AI Insight"),
+        }
+    )
+
+    # ── Individual Profile ────────────────────────
+    st.markdown('<div class="section-header"><h2>Candidate Profile Deep-Dive</h2></div>', unsafe_allow_html=True)
+    if 'Contact Id' not in fdf.columns:
+        st.info("No candidates match the current filters or 'Contact Id' is missing.")
+        return
+        
+    candidate_ids = fdf['Contact Id'].tolist()
+    if not candidate_ids:
+        st.info("No candidates match the current filters.")
+        return
+
+    sel_id = st.selectbox("Select Candidate", candidate_ids, key="profile_id")
+    row    = df[df['Contact Id'] == sel_id].iloc[0]
+    
+    # Filter notes
+    cand_notes = pd.DataFrame()
+    if notes is not None and not notes.empty and 'Parent ID.id' in notes.columns:
+        cand_notes = notes[notes['Parent ID.id'] == sel_id].copy()
+
+    churn_label = "CHURNED" if row.get('churn', 0) == 1 else "ACTIVE"
+    churn_color = "#f87171" if row.get('churn', 0) == 1 else "#34d399"
+
+    # ── Pre-build Notes History card content ───────────────────────
+    if not cand_notes.empty:
+        total_notes = len(cand_notes)
+        last_note_date = cand_notes['Created Time'].max() if 'Created Time' in cand_notes.columns else "Unknown"
+        notes_stats_html = f"""<div style="display:flex; gap:12px; margin-bottom:16px;">
+<div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+<div style="font-size:28px; font-weight:800; color:#60a5fa;">{total_notes}</div>
+<div style="font-size:12px; color:#94a3b8; margin-top:4px;">Total CRM Notes</div>
+</div>
+<div style="flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:15px; text-align:center;">
+<div style="font-size:14px; font-weight:800; color:#34d399; margin-top:10px;">{str(last_note_date)[:10]}</div>
+<div style="font-size:12px; color:#94a3b8; margin-top:4px;">Last Interaction</div>
+</div>
+</div>"""
     else:
-     st.info("No notes data available to display. Please ensure data processing is complete in the notebook.")
+        notes_stats_html = "<p style='color:#475569; font-style:italic;'>No CRM notes found.</p>"
+
+    # ── Pre-build AI churn reason + recommendation HTML ────────────
+    churn_insights_html = ""
+    if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
+        reason_data = row['Suggested_Churn_Reason']
+        rec_data = row.get('Recommended_Action', '')
+        reason_text = reason_data
+        rec_text = rec_data
+
+        def clean_dict_str(obj_s):
+            if isinstance(obj_s, str) and (obj_s.startswith('{') or obj_s.startswith('[')):
+                import ast
+                try:
+                    obj = ast.literal_eval(obj_s)
+                    if isinstance(obj, dict):
+                        return "<br>".join([f"&bull; <b>{k}:</b> {v}" for k, v in obj.items()])
+                    elif isinstance(obj, list):
+                        return "<br>".join([f"&bull; {v}" for v in obj])
+                except:
+                    pass
+            return obj_s
+
+        reason_text = clean_dict_str(reason_text)
+        rec_text = clean_dict_str(rec_text)
+
+        churn_insights_html += f"""<div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(239,68,68,0.05) 0%, rgba(239,68,68,0.02) 100%); border:1px solid rgba(239,68,68,0.2); box-shadow:0 4px 16px rgba(239,68,68,0.05); margin-bottom:12px;'>
+<div style="display:flex; align-items:center; margin-bottom:8px;">
+<i class="fa-solid fa-magnifying-glass-chart" style="color:#ef4444; font-size:16px; margin-right:10px;"></i>
+<h4 style="margin:0; color:#f8fafc; font-family:'Inter',sans-serif; font-size:14px; font-weight:700;">AI Detected Churn Risk Factor</h4>
+</div>
+<div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">{markdown.markdown(str(reason_text))}</div>
+</div>"""
+        if rec_text:
+            churn_insights_html += f"""<div style='padding:16px; border-radius:10px; background:linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(16,185,129,0.02) 100%); border:1px solid rgba(16,185,129,0.2); box-shadow:0 4px 16px rgba(16,185,129,0.05);'>
+<div style="display:flex; align-items:center; margin-bottom:8px;">
+<i class="fa-solid fa-wand-magic-sparkles" style="color:#10b981; font-size:16px; margin-right:10px;"></i>
+<h4 style="margin:0; color:#f8fafc; font-family:'Inter',sans-serif; font-size:14px; font-weight:700;">AI Retention Recommendation</h4>
+</div>
+<div style="color:#e2e8f0; font-size:14px; line-height:1.5; margin-left:26px;">{markdown.markdown(str(rec_text))}</div>
+</div>"""
 
 
-# %%writefile pages/3_🔮_Candidate_Churn_Prediction.py
+    # ── Render all three columns ────────────────────────────────────
+    pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
+    card_style = "height:100%; min-height:500px; display:flex; flex-direction:column; justify-content:space-between;"
 
-def page_live_predictor():
+    # Add raw CRM notes to UI
+    raw_notes_html = "<div style='max-height: 250px; overflow-y: auto; padding-right: 8px; margin-top: 10px;'>"
+    if not cand_notes.empty:
+        for idx, note_row in cand_notes.sort_values(by='Created Time', ascending=False).iterrows():
+            date_str = str(note_row.get('Created Time', ''))[:16]
+            exec_name = str(note_row.get('Note Owner', 'Unknown Exec'))
+            note_content = str(note_row.get('Note Content', 'No content'))
+            raw_notes_html += f"""
+            <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:10px; border-radius:6px; margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:11px; color:#94a3b8;">
+                    <span><b><i class="fa-solid fa-user-tie"></i> {exec_name}</b></span>
+                    <span>{date_str}</span>
+                </div>
+                <div style="font-size:13px; color:#e2e8f0; line-height:1.4;">{note_content}</div>
+            </div>"""
+    else:
+        raw_notes_html += "<div style='color:#64748b; font-size:13px;'>No specific CRM notes logged.</div>"
+    raw_notes_html += "</div>"
+
+    with pc1:
+
+        st.markdown(f"""<div class="candidate-card" style="{card_style}">
+<div>
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Personal Info</div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Name:</span> <b style="color:#e2e8f0;">{row.get('Contact Name','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">ID:</span> <b style="color:#a78bfa;">{row['Contact Id']}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{row.get('background','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Role:</span> <b style="color:#e2e8f0;">{row.get('role','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Experience:</span> <b style="color:#e2e8f0;">{row.get('Experience','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Gender:</span> <b style="color:#e2e8f0;">{row.get('Gender','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Source:</span> <b style="color:#e2e8f0;">{row.get('Source of lead','N/A')}</b></div>
+</div>
+<div style="margin-top:14px; padding:10px 14px; border-radius:8px; background:rgba(0,0,0,0.2); text-align:center;">
+<span style="color:{churn_color}; font-weight:800; font-size:16px;">{churn_label}</span>
+</div>
+</div>""", unsafe_allow_html=True)
+
+    with pc2:
+        inv_status = row.get('Invoice', 'No Invoice')
+        inv_color = "#34d399" if inv_status == 'Paid' else "#f87171"
+        st.markdown(f"""<div class="candidate-card" style="{card_style}">
+<div>
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Course &amp; Status</div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Course:</span> <b style="color:#e2e8f0;">{row.get('Course','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Program Joined:</span> <b style="color:#e2e8f0;">{row.get('Program Joined','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Mode:</span> <b style="color:#e2e8f0;">{row.get('Mode of Program Joined','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Location:</span> <b style="color:#e2e8f0;">{row.get('Program Location','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Current Status:</span> <b style="color:#fbbf24;">{row.get('Status','N/A')}</b></div>
+<div style="margin-bottom:10px;"><span style="color:#64748b;">Invoice Status:</span> <b style="color:{inv_color};">{inv_status}</b></div>
+</div>
+</div>""", unsafe_allow_html=True)
+
+    with pc3:
+        st.markdown(f"""<div class="candidate-card" style="{card_style}; justify-content:flex-start;">
+<div style="font-size:16px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;"><i class="fa-solid fa-clipboard" style="color:#f43f5e; margin-right:8px;"></i> CRM Notes History</div>
+{notes_stats_html}
+{churn_insights_html}
+{raw_notes_html}
+</div>""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# PAGE 3 — CRM NOTES ANALYSIS
+# ─────────────────────────────────────────────
+def page_notes_analysis(df, notes):
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-clipboard"></i> CRM Notes Analysis</h1>
+        <p>Understand interaction volume, executive engagement, and inferred candidate sentiments.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if notes is None or notes.empty:
+        st.warning("No CRM Notes data available.")
+        return
+
+    # ── KPIs ─────────────────────────────────────
+    k1, k2, k3, k4 = st.columns(4)
+    total_notes = len(notes)
+    unique_cands = notes['Parent ID.id'].nunique()
+    avg_notes_per_cand = total_notes / unique_cands if unique_cands > 0 else 0
+    unique_owners = notes['Note Owner'].nunique() if 'Note Owner' in notes.columns else 0
+
+    with k1:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-clipboard-list" style="color:#a78bfa"></i></div>
+            <div class="kpi-title">Total Notes</div>
+            <div class="kpi-value" style="color:#60a5fa">{total_notes}</div>
+            <div class="kpi-sub">Across all CRM records</div></div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-users" style="color:#34d399"></i></div>
+            <div class="kpi-title">Candidates Reached</div>
+            <div class="kpi-value" style="color:#34d399">{unique_cands}</div>
+            <div class="kpi-sub">With at least one note</div></div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-rotate"></i></div>
+            <div class="kpi-title">Avg Notes/Candidate</div>
+            <div class="kpi-value" style="color:#a78bfa">{avg_notes_per_cand:.1f}</div>
+            <div class="kpi-sub">Interaction frequency</div></div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-user-tie"></i></div>
+            <div class="kpi-title">Active Executives</div>
+            <div class="kpi-value" style="color:#fbbf24">{unique_owners}</div>
+            <div class="kpi-sub">Logging notes</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown('<div class="section-header"><h2>Notes per Executive</h2></div>', unsafe_allow_html=True)
+        if 'Note Owner' in notes.columns:
+            exec_notes = notes.groupby('Note Owner').size().reset_index(name='Notes').sort_values('Notes', ascending=True)
+            exec_notes = exec_notes.tail(15)
+            fig = px.bar(exec_notes, x='Notes', y='Note Owner', orientation='h',
+                         color='Notes', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'],
+                         text='Notes')
+            fig.update_traces(textfont_size=11, textposition='outside')
+            fig.update_layout(**theme(height=310, showlegend=False, coloraxis_showscale=False))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Note Owner data not found.")
+
+    with col2:
+        st.markdown('<div class="section-header"><h2>Notes Volume: Active vs Churned Candidates</h2></div>', unsafe_allow_html=True)
+        if 'Parent ID.id' in notes.columns and 'Contact Id' in df.columns:
+            merged = df[['Contact Id','churn']].merge(notes, left_on='Contact Id', right_on='Parent ID.id', how='right')
+            merged['Status'] = merged['churn'].map({0:'Active', 1:'Churned'}).fillna('Unknown')
+            dur_by_status = merged.groupby('Status').size().reset_index(name='Notes Count')
+            fig2 = px.pie(dur_by_status, names='Status', values='Notes Count',
+                          color='Status', color_discrete_map={'Active':COLOR_ACTIVE,'Churned':COLOR_CHURN, 'Unknown':'#64748b'}, hole=0.5)
+            fig2.update_layout(**theme(height=310, showlegend=True))
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Mapping between candidates and notes not available.")
+
+    if 'Created Time' in notes.columns:
+        st.markdown('<div class="section-header"><h2><i class="fa-solid fa-calendar-days"></i> CRM Note Activity Timeline</h2></div>', unsafe_allow_html=True)
+        try:
+            notes['Date'] = pd.to_datetime(notes['Created Time']).dt.date
+            timeline = notes.groupby('Date').size().reset_index(name='Notes')
+            timeline['Date'] = pd.to_datetime(timeline['Date'])
+            fig4 = go.Figure(go.Scatter(
+                x=timeline['Date'], y=timeline['Notes'],
+                mode='lines+markers',
+                line=dict(color='#6366f1', width=2.5),
+                marker=dict(size=7, color='#a78bfa'),
+                fill='tozeroy', fillcolor='rgba(255,255,255,0.1)',
+                hovertemplate='<b>%{x|%d %b %Y}</b><br>Notes: %{y}<extra></extra>'
+            ))
+            fig4.update_layout(**theme(
+                height=260,
+                xaxis=dict(title='Date', gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
+                yaxis=dict(title='Number of Notes', gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
+            ))
+            st.plotly_chart(fig4, use_container_width=True)
+        except Exception:
+            st.warning("Could not parse 'Created Time' for timeline.")
+
+# ─────────────────────────────────────────────
+# PAGE 4 — PAYMENT ANALYSIS
+# ─────────────────────────────────────────────
+def page_payment_analysis(df):
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-money-bill-wave"></i> Invoice & Status Analysis</h1>
+        <p>Invoice generation status and collection trends across courses.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if 'Invoice' not in df.columns:
+        st.warning("Invoice data not available.")
+        return
+
+    df_inv = df.copy()
+    df_inv['Invoice'] = df_inv['Invoice'].fillna('No Invoice').astype(str).str.title().str.strip()
+    
+    total_cands = len(df_inv)
+    paid_count  = len(df_inv[df_inv['Invoice'] == 'Paid'])
+    sent_count  = len(df_inv[df_inv['Invoice'] == 'Sent'])
+    no_inv      = len(df_inv[df_inv['Invoice'].isin(['No', 'No Invoice', 'Nan'])])
+    paid_rate   = paid_count / total_cands * 100 if total_cands > 0 else 0
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="kpi-title">Total Candidates</div>
+            <div class="kpi-value" style="color:#60a5fa; font-size:26px;">{total_cands}</div>
+            <div class="kpi-sub">Total records</div></div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-check-circle" style="color:#34d399"></i></div>
+            <div class="kpi-title">Paid Invoices</div>
+            <div class="kpi-value" style="color:#34d399; font-size:26px;">{paid_count}</div>
+            <div class="kpi-sub">{paid_rate:.1f}% paid rate</div></div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-paper-plane" style="color:#fbbf24"></i></div>
+            <div class="kpi-title">Sent (Pending)</div>
+            <div class="kpi-value" style="color:#fbbf24; font-size:26px;">{sent_count}</div>
+            <div class="kpi-sub">Awaiting payment</div></div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-ban" style="color:#f87171"></i></div>
+            <div class="kpi-title">No Invoice</div>
+            <div class="kpi-value" style="color:#f87171; font-size:26px;">{no_inv}</div>
+            <div class="kpi-sub">Not yet generated</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown('<div class="section-header"><h2>Invoice Status Distribution</h2></div>', unsafe_allow_html=True)
+        inv_counts = df_inv['Invoice'].value_counts().reset_index()
+        inv_counts.columns = ['Invoice Status', 'Count']
+        fig = px.pie(inv_counts, names='Invoice Status', values='Count', hole=0.4,
+                     color_discrete_sequence=['#34d399', '#f87171', '#fbbf24', '#a78bfa', '#94a3b8'])
+        fig.update_layout(**theme(height=300, showlegend=True))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.markdown('<div class="section-header"><h2>Invoice Status by Course</h2></div>', unsafe_allow_html=True)
+        pm = df_inv.groupby(['Course','Invoice']).size().reset_index(name='Count')
+        fig2 = px.bar(pm, x='Course', y='Count', color='Invoice',
+                      color_discrete_sequence=['#34d399', '#fbbf24', '#f87171', '#94a3b8'],
+                      barmode='stack')
+        fig2.update_layout(**theme(height=300, showlegend=True))
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown('<div class="section-header"><h2>Churn Distribution by Invoice Status</h2></div>', unsafe_allow_html=True)
+    inv_churn = df_inv.groupby(['Invoice', 'churn']).size().reset_index(name='Count')
+    inv_churn['Status'] = inv_churn['churn'].map({0:'Active', 1:'Churned'})
+    fig3 = px.bar(inv_churn, x='Invoice', y='Count', color='Status',
+                  color_discrete_map={'Active':COLOR_ACTIVE,'Churned':COLOR_CHURN},
+                  barmode='group', text='Count')
+    fig3.update_traces(textfont_size=12, textposition='outside')
+    fig3.update_layout(**theme(height=360))
+    st.plotly_chart(fig3, use_container_width=True)
+
+# ─────────────────────────────────────────────
+# PAGE 5 — LIVE PREDICTOR
+# ─────────────────────────────────────────────
+def page_live_predictor(df, model_data):
     st.markdown("""
     <div class="page-header">
         <h1><i class="fa-solid fa-robot"></i> Live Churn Predictor</h1>
-        <p>Fill in candidate details to get an instant AI-powered churn risk assessment.</p>
+        <p>Dynamic AI predictor based on the active model schema.</p>
     </div>
     """, unsafe_allow_html=True)
- 
-    @st.cache_resource
-    def load_model_artifacts():
-        try:
-            with open(os.path.join(ARTIFACTS_PATH, 'churn_prediction_model.pkl'), 'rb') as f:
-               model_data = pickle.load(f)
-            return model_data
-        except FileNotFoundError:
-            st.error("Model artifacts not found. Please run the notebook to train and save the model.")
-            return None
- 
-    model_artifacts = load_model_artifacts()
- 
-    if model_artifacts:
-        model = model_artifacts['model']
-        scaler = model_artifacts['scaler']
-        feature_columns = model_artifacts['feature_columns']
-        categorical_features = model_artifacts['categorical_features']
-        numerical_features = model_artifacts['numerical_features']
- 
-        st.subheader("Live Churn Prediction")
-        st.write("Enter candidate details below to predict their churn status and get recommendations.")
- 
-     # Input form for candidate features
-        with st.form("churn_prediction_form"):
-            st.markdown("##### Personal & Program Details")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-               gender = st.selectbox("Gender", ['Male', 'Female', 'Others'])
-               experience = st.number_input("Experience (Years)", min_value=0, max_value=50, value=0)
-               semester = st.number_input("Semester (if student)", min_value=0, max_value=12, value=0)
-            with col2:
-               year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050, value=2024)
-               course = st.text_input("Course (e.g., DA, DS, BTECH)", "UNSPECIFIED")
-               source_of_lead = st.selectbox("Source of Lead", ['Indeed', 'Reference', 'Digital Marketing (Goat add)', 'Infopark website', 'Direct', 'Bulk Lead (3000)', 'Free internship campaign', 'Digital Marketing (Add On)', 'Others', 'Organic', 'Naukri Paid', 'Website Enquiry', 'Social Media', 'OLX', 'Instagram', 'Justdial', 'Seminar', 'Job Fair', 'Walk-in', 'LinkedIn', 'YouTube', 'Telecalling', 'Google', 'WhatsApp', 'DM', 'Carryover', 'college referal', 'Webinar', 'dm', 'free internship', 'infopark', 'I'])
-            with col3:
-               track_interested = st.selectbox("Track Interested", ['Data Analytics', 'Python Full stack', 'Datascience/DataAnalytics', 'Datascience', 'MERN Stack', 'Artificial Intelligence', 'Fullstack', 'Data Science & AI', 'DevOps', 'Cloud Computing', 'Digital Marketing', 'Cyber Security', 'Block Chain', 'Machine Learning', 'Big Data', 'Web Development', 'UI/UX Design', 'Flutter', 'Data Science', 'Data Engineering', 'Not mentioned'])
-               mode_of_program_joined = st.selectbox("Mode of Program Joined", ['Not mentioned', 'Online', 'Onsite', 'Hybrid', 'online hybrid'])
-               batch_assigned_to = st.selectbox("Batch Assigned to", ['Not assigned', '2024-01-01 00:00:00', '2025-01-01 00:00:00', '2026-02-25 00:00:00', 'First Choice', '2026-06-24 00:00:00', '2025-03-01 00:00:00', '2026-12-25 00:00:00'])
- 
-            st.markdown("##### Other Flags")
-            col4, col5 = st.columns(2)
-            with col4:
-               test_taken = st.checkbox("Test Taken")
-               followup_email_sent = st.checkbox("Followup Email Sent")
-               invoice_generated = st.checkbox("Invoice Generated")
-            with col5:
-             # Inferred Reasons (simulated based on typical keywords, for live prediction user might not know this directly)
-             # For a real app, these might be derived from other text inputs or internal logic
-               st.markdown("*(For simplified demo, select inferred reasons directly)*")
-               joined_competitor = st.checkbox("Joined a Competitor (Inferred)")
-               already_working = st.checkbox("Already Working/Internship (Inferred)")
-               looking_for_job_internship = st.checkbox("Looking for Job/Internship (Inferred)")
-               not_interested = st.checkbox("Not Interested (Inferred)")
-               financial_issue = st.checkbox("Financial Issue (Inferred)")
-               unreachable_not_connected = st.checkbox("Unreachable/Not Connected (Inferred)")
-               decision_pending = st.checkbox("Decision Pending (Inferred)")
-               no_notes_provided = st.checkbox("No Notes Provided (Inferred)")
- 
-            submitted = st.form_submit_button("Predict Churn")
- 
-        if submitted:
-         # Create a DataFrame from user inputs
-            input_data = pd.DataFrame([{
-               'Experience': experience,
-               'Semester': semester,
-               'Year of Graduation': year_of_graduation,
-               'Test': int(test_taken),
-               'Followup Email': int(followup_email_sent),
-               'Invoice_binary': int(invoice_generated),
-               'joined_competitor': int(joined_competitor),
-               'already_working': int(already_working),
-               'looking_for_job_internship': int(looking_for_job_internship),
-               'not_interested': int(not_interested),
-               'financial_issue': int(financial_issue),
-               'unreachable_not_connected': int(unreachable_not_connected),
-               'decision_pending': int(decision_pending),
-               'no_notes_provided': int(no_notes_provided),
- 
-             # Categorical features
-               'Source of lead': source_of_lead,
-               'Course': course,
-               'background': 'UNKNOWN', # Placeholder, ideally derived dynamically from course
-               'role': 'Unknown', # Placeholder, ideally derived dynamically from experience/semester/grad_year
-               'final_inferred_status': 'Unclear', # Placeholder, as this comes from notes analysis
-               'Track Interested': track_interested,
-               'Mode of Program Joined': mode_of_program_joined,
-               'Batch Assigned to': batch_assigned_to,
-               'Gender': gender
-            }])
- 
-         # --- Preprocessing steps for input_data, mirroring the notebook ---
-         # 1. Standardize course (simplified for Streamlit demo)
-         # This would require replicating the `standardize_course_name` logic here or pre-calculating options.
-         # For demo, just use the input 'course' as is, but a full app would need the function.
- 
-         # 2. Derive 'role' and 'background' (simplified/placeholder)
-         # Replicate `assign_role` and `assign_background` from notebook here or use simple mapping.
-            def assign_role_streamlit(row):
-                if row['Experience'] > 0:
-                     return 'Professional'
-                elif row['Semester'] > 0:
-                     return 'Student'
-                elif row['Year of Graduation'] > 0 and row['Experience'] == 0: # Assuming graduated + no experience = idle
-                     return 'Idle or Career Gap'
-                return 'Unknown'
- 
-            input_data['role'] = input_data.apply(assign_role_streamlit, axis=1)
- 
-            def assign_background_streamlit(course_str):
-                course_str_upper = str(course_str).upper()
-                tech_keywords = ['BTECH', 'BE', 'MTECH', 'BCA', 'MCA', 'BSC-CS', 'MSC-CS', 'IT', 'DA', 'DS', 'AI', 'COMPUTER']
-                if any(k in course_str_upper for k in tech_keywords): return 'Tech'
-                non_tech_keywords = ['BCOM', 'MCOM', 'BA', 'MA', 'ARTS', 'COMMERCE']
-                if any(k in course_str_upper for k in non_tech_keywords): return 'Non-Tech'
-                return 'UNKNOWN'
- 
-            input_data['background'] = input_data['Course'].apply(assign_background_streamlit)
- 
-         # Create dummy variables for categorical features
-         # Need to ensure all possible columns from training are present
-         # Create a dummy dataframe with all known feature columns from training data to align columns
-            dummy_df = pd.DataFrame(columns=feature_columns)
-            processed_input = pd.get_dummies(input_data, columns=categorical_features, drop_first=True)
- 
-         # Align columns - add missing columns with 0 and remove extra ones
-            for col in feature_columns:
-                if col not in processed_input.columns:
-                    processed_input[col] = 0
-            processed_input = processed_input[feature_columns] # Ensure order and presence
- 
-         # Scale numerical features
-            processed_input[numerical_features] = scaler.transform(processed_input[numerical_features])
- 
-         # --- Prediction ---
-            churn_probability = model.predict_proba(processed_input)[:, 1][0]
-            churn_prediction = model.predict(processed_input)[0]
- 
-            st.subheader("Prediction Result")
-            if churn_prediction == 1:
-                st.error(f"This candidate is predicted to **CHURN** with a probability of {churn_probability:.2f}.")
-            else:
-                st.success(f"This candidate is predicted to **NOT CHURN** with a probability of {1 - churn_probability:.2f}.")
- 
-            st.subheader("Suggested Churn Reason & Recommended Action")
-         # Replicate the heuristic_recommendation logic from the notebook
-            def heuristic_recommendation(reason_label):
-                mapping = {
-                 'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
-                 'Not Interested': 'Re-engage with personalized course benefits, clarify learning outcomes, and offer a second consultation call.',
-                 'Joined another institution': 'Reach out with retention incentives, compare program strengths, and propose a unique value-added offer.',
-                 'Unreachable/Not Connected': 'Increase outreach frequency, confirm contact details, and assign a dedicated counselor for follow-up.',
-                 'Already Working/Internship': 'Highlight career advancement opportunities and specialized training. Emphasize how the program complements existing experience.',
-                 'Looking for Job/Internship': 'Provide insights into job market trends, showcase success stories, and offer career counseling specific to job/internship search.',
-                 'Decision Pending/Discussing': 'Follow up with clarity on program benefits, address family concerns, and offer a consultation with an expert.',
-                 'Location Issue': 'Suggest online/remote learning options or alternative program locations if available.',
-                 'Time/Schedule Conflict': 'Offer flexible scheduling, part-time options, or self-paced learning modules.',
-                 'Interested/Pending': 'Provide more detailed information, address specific queries, and maintain regular follow-up to convert interest.',
-                 'Details Shared/Collected': 'Ensure timely processing of candidate details and initiate contact for next steps.',
-                 'No Notes Provided': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.',
-                 'Other': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.'
-                }
-                return mapping.get(reason_label, mapping['Other'])
- 
-         # Determine primary inferred reason based on selected checkboxes
-            inferred_reason = 'No Notes Provided'
-            if joined_competitor: inferred_reason = 'Joined another institution'
-            elif already_working: inferred_reason = 'Already Working/Internship'
-            elif looking_for_job_internship: inferred_reason = 'Looking for Job/Internship'
-            elif not_interested: inferred_reason = 'Not Interested'
-            elif financial_issue: inferred_reason = 'Financial issues'
-            elif unreachable_not_connected: inferred_reason = 'Unreachable/Not Connected'
-            elif decision_pending: inferred_reason = 'Decision Pending/Discussing'
- 
-            recommended_action = heuristic_recommendation(inferred_reason)
- 
-            st.info(f"**Inferred Reason**: {inferred_reason}")
-            st.warning(f"**Recommended Action**: {recommended_action}")
- 
-    else:
-        st.warning("Model artifacts not loaded. Please ensure the notebook has been run to train and save the model.")
 
-
-
-#  pages/4_📊_Model_Performance_Analysis.py
- 
-def page_model_performance():
-    st.markdown("""
-    <div class="page-header">
-        <h1><i class="fa-solid fa-chart-line"></i> Model Performance</h1>
-        <p>Evaluation metrics, feature importance, and model comparison for the churn prediction model.</p>
-    </div>
-    """, unsafe_allow_html=True)
- 
-    @st.cache_data
-    def load_performance_data():
-        try:
-            model_eval_results = pd.read_csv(os.path.join(ARTIFACTS_PATH, 'model_evaluation_results.csv'))
-            feature_importance_report = pd.read_csv(os.path.join(ARTIFACTS_PATH, 'feature_importance_report.csv'))
-            return model_eval_results, feature_importance_report
-        except FileNotFoundError:
-            st.error("Model performance files not found. Please run the notebook to generate them.")
-            return pd.DataFrame(), pd.DataFrame()
- 
-    model_eval_results_df, feature_importance_df = load_performance_data()
- 
-    if not model_eval_results_df.empty:
-        st.subheader("Model Comparison")
-        st.write("Here you can see a comparison of different models evaluated during training.")
-        st.dataframe(model_eval_results_df.set_index('Model'))
- 
-        st.subheader("Best Model Performance Summary")
-     # Assuming the first row of model_eval_results_df is the best tuned model or you have a way to identify it
-     # For this demo, let's assume the best model name is 'LogisticRegression' (from notebook output)
-        best_model_name = 'Logistic Regression'
-        best_model_performance = model_eval_results_df[model_eval_results_df['Model'] == best_model_name].iloc[0]
- 
-        if not best_model_performance.empty:
-            st.markdown(f"##### Performance of {best_model_name}")
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1: st.metric("Accuracy", f"{best_model_performance['Accuracy']:.3f}")
-            with col2: st.metric("Precision", f"{best_model_performance['Precision']:.3f}")
-            with col3: st.metric("Recall", f"{best_model_performance['Recall']:.3f}")
-            with col4: st.metric("F1 Score", f"{best_model_performance['F1 Score']:.3f}")
-            with col5: st.metric("ROC-AUC", f"{best_model_performance['ROC-AUC']:.3f}")
-        else:
-            st.warning("Could not find performance data for the best model.")
- 
- 
-        st.subheader("Feature Importance")
-        st.write("This chart shows the most important features contributing to the churn prediction model.")
-        try:
-           st.image(os.path.join(ARTIFACTS_PATH, 'feature_importance.png'))
-        except FileNotFoundError:
-           st.warning("Feature importance plot not found. Please run the notebook to generate it.")
- 
-        st.subheader("Receiver Operating Characteristic (ROC) Curve")
-        st.write("The ROC curve illustrates the diagnostic ability of a binary classifier system as its discrimination threshold is varied.")
-        try:
-           st.image(os.path.join(ARTIFACTS_PATH, 'roc_curve.png'))
-        except FileNotFoundError:
-           st.warning("ROC curve plot not found. Please run the notebook to generate it.")
- 
-        st.subheader("Churn Distribution")
-        st.write("This plot shows the distribution of churned vs. non-churned candidates in the dataset.")
-        try:
-           st.image(os.path.join(ARTIFACTS_PATH, 'churn_distribution.png'))
-        except FileNotFoundError:
-           st.warning("Churn distribution plot not found. Please run the notebook to generate it.")
- 
-    else:
-         st.info("No model performance data available to display. Please ensure data processing and model training are complete in the notebook.")
-
-
-def page_profile():
-    st.markdown('<div class="page-header"><h1><i class="fa-solid fa-user-circle"></i> Executive Profile</h1><p>Manage your account settings and personal info.</p></div>', unsafe_allow_html=True)
-    
-    try:
-        user_res = supabase.auth.get_user()
-        if not user_res or not user_res.user:
-            st.error("Could not fetch user session.")
-            return
-        u = user_res.user
-    except Exception as e:
-        st.error(f"Error fetching profile: {e}")
+    if model_data is None:
+        st.error("Could not load churn_prediction_model.pkl")
         return
 
-    st.markdown(f"""
-    <div style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:10px; padding:20px; margin-bottom:20px;">
-        <h3 style="margin-top:0;">Account Information</h3>
-        <p style="margin:5px 0;"><strong>Email ID:</strong> {u.email}</p>
-        <p style="margin:5px 0;"><strong>User ID:</strong> {u.id}</p>
+    model           = model_data['model']
+    feature_columns = model_data.get('feature_columns', [])
+    categorical_feat= model_data.get('categorical_features', [])
+    numerical_feat  = model_data.get('numerical_features', [])
+    label_encoders  = model_data.get('label_encoders', {})
+
+    st.markdown("### Enter Candidate Details")
+    
+    input_data = {}
+    cols = st.columns(3)
+    
+    for i, col in enumerate(categorical_feat):
+        with cols[i % 3]:
+            # Get unique values from encoder classes if available
+            opts = ["Unknown"]
+            if col in label_encoders:
+                opts = list(label_encoders[col].classes_)
+            # Handle potential unhashable lists inside classes_
+            opts = [str(x) for x in opts]
+            input_data[col] = st.selectbox(f"{col}", sorted(opts), key=f"cat_{col}")
+            
+    for i, col in enumerate(numerical_feat):
+        with cols[(len(categorical_feat) + i) % 3]:
+            input_data[col] = st.number_input(f"{col}", value=0.0, format="%.2f", key=f"num_{col}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
+        input_df = pd.DataFrame([input_data])
+        
+        # Apply label encoders
+        for col in categorical_feat:
+            if col in input_df.columns and col in label_encoders:
+                le = label_encoders[col]
+                val = str(input_df[col].iloc[0])
+                if val in le.classes_:
+                    input_df[col] = le.transform([val])[0]
+                else:
+                    input_df[col] = 0
+
+        X = input_df[feature_columns].copy()
+        for c in numerical_feat:
+            if c not in X.columns:
+                X[c] = 0.0
+
+        try:
+            pred = model.predict(X)[0]
+            prob = model.predict_proba(X)[0]
+            churn_prob = prob[1] * 100 if len(prob) > 1 else (100 if pred == 1 else 0)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            if pred == 1:
+                st.markdown(f"""
+                <div class="prediction-box-churn">
+                    <div class="pred-label" style="color:#f87171;">CHURN RISK</div>
+                    <div class="pred-sub">Probability: <b style="color:#ffffff;">{churn_prob:.1f}%</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="prediction-box-safe">
+                    <div class="pred-label" style="color:#34d399;">ACTIVE CANDIDATE</div>
+                    <div class="pred-sub">Probability of churn: <b style="color:#ffffff;">{churn_prob:.1f}%</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
+
+# ─────────────────────────────────────────────
+# PAGE 6 — MODEL PERFORMANCE
+# ─────────────────────────────────────────────
+def page_model_performance(df, model_data):
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-chart-bar"></i> Model Performance Tracker</h1>
+        <p>Live metrics from the pipeline evaluation outputs.</p>
     </div>
     """, unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown('<div class="section-header"><h2>Profile Details</h2></div>', unsafe_allow_html=True)
-        current_name = u.user_metadata.get("full_name", "") if u.user_metadata else ""
-        new_name = st.text_input("Display Name", value=current_name)
-        if st.button("Save Profile", type="primary"):
-            try:
-                supabase.auth.update_user({"data": {"full_name": new_name}})
-                st.success("Profile updated!")
-            except Exception as e:
-                st.error(f"Failed to update profile: {e}")
-
-    with c2:
-        st.markdown('<div class="section-header"><h2>Update Password</h2></div>', unsafe_allow_html=True)
-        new_pass = st.text_input("New Password", type="password")
-        if st.button("Update Password"):
-            if new_pass:
-                try:
-                    supabase.auth.update_user({"password": new_pass})
-                    st.success("Password updated!")
-                except Exception as e:
-                    st.error(f"Failed to update password: {e}")
-            else:
-                st.warning("Please enter a new password.")
+    
+    eval_path = os.path.join(OUTPUT_DIR, "model_evaluation_results.csv")
+    feat_path = os.path.join(OUTPUT_DIR, "feature_importance_report.csv")
+    
+    if os.path.exists(eval_path):
+        eval_df = pd.read_csv(eval_path)
+        st.markdown("### Evaluation Metrics")
+        st.dataframe(eval_df, use_container_width=True)
+    else:
+        st.info("Evaluation results not found.")
+        
+    if os.path.exists(feat_path):
+        feat_df = pd.read_csv(feat_path).head(15)
+        st.markdown("### Top 15 Feature Importances")
+        fig = px.bar(feat_df, x='Importance', y='Feature', orientation='h',
+                     color='Importance', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'])
+        fig.update_layout(yaxis={'categoryorder':'total ascending'})
+        fig.update_layout(**theme(height=400, showlegend=False))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Feature importance report not found.")
 
 
-# ─────────────────────────────────────────────
-# MAIN APP
-# ─────────────────────────────────────────────
 def main():
     if not st.session_state.get("logged_in", False):
         page_auth()
@@ -1096,11 +1626,25 @@ def main():
 
     page = sidebar()
 
+    # Load data
+    with st.spinner("Loading data..."):
+        try:
+            df, notes = load_data()
+            df, notes = preprocess(df, notes)
+        except Exception as e:
+            st.error(f"Could not load data files: {e}")
+            st.stop()
 
-    if   "Overview"            in page: page_overview()
-    elif "Notes"            in page: page_note_analysis()
-    elif "Predictor"           in page: page_live_predictor()
-    elif "Model Performance"   in page: page_model_performance()
+    model_path = os.path.join(OUTPUT_DIR, "churn_prediction_model.pkl")
+    model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
+    model_data = load_model(model_path, model_modified_time)
+
+    if   "Overview"            in page: page_overview(df, notes)
+    elif "Candidate Explorer"  in page: page_candidate_explorer(df, notes)
+    elif "CRM Notes Analysis"  in page: page_notes_analysis(df, notes)
+    elif "Invoice Analysis"    in page: page_payment_analysis(df)
+    elif "Predictor"           in page: page_live_predictor(df, model_data)
+    elif "Model Performance"   in page: page_model_performance(df, model_data)
 
 
 if __name__ == "__main__":
