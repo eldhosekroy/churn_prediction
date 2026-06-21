@@ -634,7 +634,7 @@ OUTPUT_DIR = "./output/"
 @st.cache_data
 def load_data():
     # Load the processed dataset with inferred churn and reasons
-    df_path = os.path.join(OUTPUT_DIR, "candidates_with_suggested_reasons.csv")
+    df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
     notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
     
     if os.path.exists(df_path):
@@ -666,27 +666,34 @@ def preprocess(df, notes):
         df['Mode of Program Joined'] = df['Mode of Program Joined'].fillna('Unknown')
         df['background'] = df['background'].fillna('Unknown')
         df['role'] = df['role'].fillna('Unknown')
-        df['Invoice'] = df['Invoice'].fillna('No Invoice')
+        df['Invoice'] = df['Invoice'].fillna('No')
         
         # Payment mapping (if needed for legacy UI logic, though we will replace UI)
-        df['Payment_Ratio'] = np.where(df['Invoice'] == 'Paid', 1.0, 0.0)
+        #df['Payment_Ratio'] = np.where(df['Invoice'] == 'Paid', 1.0, 0.0)
         
     return df, notes
 
 
 @st.cache_resource
-def load_model(model_path, modified_time):
+def load_model():
     try:
-        with open(model_path, "rb") as f:
+        with open(os.path.join(OUTPUT_DIR, 'churn_prediction_model.pkl'), 'rb') as f:
             data = pickle.load(f)
+
+            # Add missing keys with defaults (same as before)
             if 'model_name' not in data and 'model' in data:
                 data['model_name'] = data['model'].__class__.__name__
             if 'model_display_name' not in data:
-                data['model_display_name'] = data.get('model_name', data['model'].__class__.__name__)
+                data['model_display_name'] = data.get('model_name', 'Unknown Model')
             if 'balance_method' not in data:
                 data['balance_method'] = 'none'
+
             return data
-    except Exception:
+    except FileNotFoundError:
+        st.error("Model artifacts not found. Please run the notebook to train and save the model.")
+        return None
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
         return None
 
 
@@ -928,7 +935,7 @@ def page_overview(df, notes):
     """, unsafe_allow_html=True)
 
     total       = len(df)
-    churned     = df['churn'].sum() if 'churn' in df.columns else 0
+    churned     = (df['churn'] == 1).sum()
     active      = total - churned
     churn_rate  = (churned / total * 100) if total > 0 else 0
     total_notes = len(notes) if notes is not None else 0
@@ -1483,53 +1490,153 @@ def page_live_predictor(df, model_data):
         st.error("Could not load churn_prediction_model.pkl")
         return
 
-    available_models = model_data.get('available_models', {})
-    
-    if not available_models:
+    #available_models = model_data.get('available_models', {})
+
+    #if not available_models:
         # Fallback to single model if available_models is missing (older model format)
-        available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
+    #    available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
     
     # Model Selection UI
-    st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
+    #st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
     
-    col_ai, _ = st.columns([1, 2])
-    with col_ai:
-        selected_model_name = st.selectbox(
-            "Select AI Model",
-            options=list(available_models.keys()),
-            help="Choose which trained algorithm to use for the prediction."
-        )
+    #col_ai, _ = st.columns([1, 2])
+    #with col_ai:
+    #    selected_model_name = st.selectbox(
+    #       "Select AI Model",
+    #        options=list(available_models.keys()),
+    #        help="Choose which trained algorithm to use for the prediction."
+    #    )
     
-    model = available_models[selected_model_name]
-    
+    #model = available_models[selected_model_name]
+    model = model_data['model']
     feature_columns = model_data.get('feature_columns', [])
     categorical_feat= model_data.get('categorical_features', [])
     numerical_feat  = model_data.get('numerical_features', [])
     label_encoders  = model_data.get('label_encoders', {})
     scaler          = model_data.get('scaler', None)
+    balance_method = model_data.get('balance_method', 'none')
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    input_data = {}
-    cols = st.columns(3)
-    
-    for i, col in enumerate(categorical_feat):
-        with cols[i % 3]:
-            opts = ["Unknown"]
-            if col in label_encoders:
-                opts = list(label_encoders[col].classes_)
-            opts = [str(x) for x in opts]
-            input_data[col] = st.selectbox(f"{col}", sorted(opts), key=f"cat_{col}")
-            
-    for i, col in enumerate(numerical_feat):
-        with cols[(len(categorical_feat) + i) % 3]:
-            input_data[col] = st.number_input(f"{col}", value=0.0, format="%.2f", key=f"num_{col}")
+    st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
+    st.markdown(
+        f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        gender = st.selectbox("Gender", sorted(df['Gender'].unique()), key="p_gender")
+        source = st.selectbox("Source of lead", sorted(df['Source of lead'].unique()), key="p_source")
+        education = st.selectbox("Course", sorted(df['Course'].unique()), key="p_edu")
+        semester = st.number_input("Semester", 0, 10, 3, key="p_sem")
+        background = st.selectbox("background", sorted(df['background'].unique()), key="p_bg")
+
+    with col2:
+        stream = st.selectbox("Program_Name", sorted(df['Program_Name'].unique()), key="p_stream")
+        role = st.selectbox("role", sorted(df['role'].unique()), key="p_role")
+        mode = st.selectbox("Mode of Program Joined", sorted(df['Mode of Program Joined'].unique()), key="p_mode")
+        track_interested = st.selectbox("Track Interested", sorted(df['Track Interested'].unique()), key="p_track")
+
+    with col3:
+        status = st.selectbox("final_inferred_status", sorted(df['final_inferred_status'].unique()), key="p_cs")
+        experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
+        year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
+                                             value=2024)
+        batch_assigned_to = st.selectbox("Batch Assigned to",
+                                         ['Not assigned', '2024-01-01 00:00:00', '2025-01-01 00:00:00',
+                                          '2026-02-25 00:00:00', 'First Choice', '2026-06-24 00:00:00',
+                                          '2025-03-01 00:00:00', '2026-12-25 00:00:00'])
+
+    st.markdown('<div class="section-header"><h2>Call Inputs</h2></div>', unsafe_allow_html=True)
+
+    sc1, sc2, sc3 = st.columns(3)
+    with sc1:
+        test_taken = st.checkbox("Attended an assessment", value=True, key="p_tt")
+    with sc2:
+        followup_email_sent = st.checkbox("Followup after call", value=False, key="p_fe")
+    with sc3:
+        invoice_generated = st.checkbox("Payment Done", value=False, key="p_ig")
+
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    with sc1:
+        not_interested = st.checkbox("No Interest in Course", value=True, key="p_ni")
+    with sc2:
+        unreachable_not_connected = st.checkbox("No Response / Unreachable", value=False, key="p_ur")
+    with sc3:
+        joined_competitor = st.checkbox("Joined in another institution", value=False, key="p_jc")
+    with sc4:
+        financial_issue = st.checkbox("Course fees not affordable", value=True, key="p_fs")
+
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    with sc1:
+        already_working = st.checkbox("Got placed", value=True, key="p_aw")
+    with sc2:
+        looking_for_job = st.checkbox("Job hunting, not internship", value=False, key="p_lj")
+    with sc4:
+        no_notes_provided = st.checkbox("No notes after call", value=False, key="p_nn")
+    with sc3:
+        decision_pending = st.checkbox("Technical Discussion", value=True, key="p_dp")
+
+    # Free-text call remarks and optional transcript for live inference
+    call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000,
+                                placeholder="Enter recent call remarks or notes...", key="p_remarks")
+    call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000,
+                                   placeholder="Paste full call transcript to improve AI churn reason extraction.",
+                                   key="p_transcript")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
+
+
+        input_data = {'Experience': experience,
+            'Semester': semester,
+            'Year of Graduation': year_of_graduation,
+            'Test': int(test_taken),
+            'Followup Email': int(followup_email_sent),
+            'Invoice_binary': int(invoice_generated),
+            'joined_competitor': int(joined_competitor),
+            'already_working': int(already_working),
+            'looking_for_job_internship': int(looking_for_job),
+            'not_interested': int(not_interested),
+            'financial_issue': int(financial_issue),
+            'unreachable_not_connected': int(unreachable_not_connected),
+            'decision_pending': int(decision_pending),
+            'no_notes_provided': int(no_notes_provided),
+
+            # Categorical features
+            'Source of lead': source,
+            'Course': education,
+            'background': background, # Placeholder, ideally derived dynamically from course
+            'role': role,# Placeholder, ideally derived dynamically from experience/semester/grad_year
+            #'Program_Name': stream,
+            'final_inferred_status': status, # Placeholder, as this comes from notes analysis
+            'Track Interested': track_interested,
+            'Mode of Program Joined': mode,
+            'Batch Assigned to': batch_assigned_to,
+            'Gender': gender
+        }
+
         input_df = pd.DataFrame([input_data])
-        
+
+        dummy_df = pd.DataFrame(columns=feature_columns)
+        processed_input = pd.get_dummies(input_data, columns=categorical_feat, drop_first=True)
+
+        # Align columns - add missing columns with 0 and remove extra ones
+        for col in feature_columns:
+            if col not in processed_input.columns:
+                processed_input[col] = 0
+        processed_input = processed_input[feature_columns]  # Ensure order and presence
+
+        # Scale numerical features
+        processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
+
+
+        # Add any missing model features with safe defaults
+        for col in feature_columns:
+            if col not in input_df.columns:
+                if col in numerical_feat:
+                    input_df[col] = 0
+                else:
+                    input_df[col] = 'Unknown'
+
         # Apply label encoders carefully
         for col in categorical_feat:
             if col in input_df.columns and col in label_encoders:
@@ -1544,19 +1651,20 @@ def page_live_predictor(df, model_data):
         
         for c in numerical_feat:
             if c not in X.columns:
-                X[c] = 0.0
+                X[c] = 0
 
-        if scaler:
-            try:
-                X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
-            except Exception as e:
-                pass # If scaler fails, we just continue with raw values
+
+        X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
+                # If scaler fails, we just continue with raw values
 
         try:
-            pred = model.predict(X)[0]
-            prob = model.predict_proba(X)[0]
-            churn_prob = prob[1] if len(prob) > 1 else (1.0 if pred == 1 else 0.0)
-            
+            #pred = model.predict(X)[0]
+            #prob = model.predict_proba(X)[0][1]
+            # --- Prediction ---
+            prob = model.predict_proba(processed_input)[:, 1][0]
+            pred = model.predict(processed_input)[0]
+            #churn_prob = prob[1] if len(prob) > 1 else (1.0 if pred == 1 else 0.0)
+
             # Result Display identical to app.py
             r1, r2, r3 = st.columns([1.2, 1.2, 1.6])
             with r1:
@@ -1578,12 +1686,12 @@ def page_live_predictor(df, model_data):
             with r2:
                 gauge = go.Figure(go.Indicator(
                     mode="gauge+number",
-                    value=round(churn_prob * 100, 1),
+                    value=round(prob * 100, 1),
                     title={"text": "Churn Probability", "font": {"color": "#94a3b8", "size": 14}},
                     number={"suffix": "%", "font": {"color": "#e2e8f0", "size": 36}},
                     gauge={
                         "axis": {"range": [0, 100], "tickcolor": "#475569"},
-                        "bar":  {"color": "#f87171" if churn_prob > 0.5 else "#34d399", "thickness": 0.3},
+                        "bar":  {"color": "#f87171" if prob > 0.5 else "#34d399", "thickness": 0.3},
                         "bgcolor": "rgba(0,0,0,0)",
                         "steps": [
                             {"range": [0, 30],   "color": "rgba(52,211,153,0.15)"},
@@ -1598,7 +1706,7 @@ def page_live_predictor(df, model_data):
                 st.plotly_chart(gauge, use_container_width=True)
                 
             with r3:
-                risk_level = "High" if churn_prob > 0.6 else ("Medium" if churn_prob > 0.35 else "Low")
+                risk_level = "High" if prob > 0.6 else ("Medium" if prob > 0.35 else "Low")
                 action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
                 
                 st.markdown(f"""
@@ -1606,7 +1714,7 @@ def page_live_predictor(df, model_data):
                     <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Risk Assessment</div>
                     <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
                         <span style="color:#64748b;">Churn Probability</span>
-                        <b style="color:#e2e8f0;">{churn_prob*100:.1f}%</b>
+                        <b style="color:#e2e8f0;">{prob*100:.1f}%</b>
                     </div>
                     <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
                         <span style="color:#64748b;">Risk Level</span>
@@ -1614,7 +1722,7 @@ def page_live_predictor(df, model_data):
                     </div>
                     <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
                         <span style="color:#64748b;">Using Model</span>
-                        <b style="color:#e2e8f0;">{selected_model_name}</b>
+                        <b style="color:#e2e8f0;">{model}</b>
                     </div>
                     <hr style="border-color:rgba(255,255,255,0.2); margin:12px 0;">
                     <div style="font-size:12px; color:#64748b;">
@@ -1657,6 +1765,54 @@ def page_model_performance(df, model_data):
     else:
         st.info("Feature importance report not found.")
 
+
+def page_profile():
+    st.markdown(
+        '<div class="page-header"><h1><i class="fa-solid fa-user-circle"></i> Executive Profile</h1><p>Manage your account settings and personal info.</p></div>',
+        unsafe_allow_html=True)
+
+    try:
+        user_res = supabase.auth.get_user()
+        if not user_res or not user_res.user:
+            st.error("Could not fetch user session.")
+            return
+        u = user_res.user
+    except Exception as e:
+        st.error(f"Error fetching profile: {e}")
+        return
+
+    st.markdown(f"""
+    <div style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:10px; padding:20px; margin-bottom:20px;">
+        <h3 style="margin-top:0;">Account Information</h3>
+        <p style="margin:5px 0;"><strong>Email ID:</strong> {u.email}</p>
+        <p style="margin:5px 0;"><strong>User ID:</strong> {u.id}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<div class="section-header"><h2>Profile Details</h2></div>', unsafe_allow_html=True)
+        current_name = u.user_metadata.get("full_name", "") if u.user_metadata else ""
+        new_name = st.text_input("Display Name", value=current_name)
+        if st.button("Save Profile", type="primary"):
+            try:
+                supabase.auth.update_user({"data": {"full_name": new_name}})
+                st.success("Profile updated!")
+            except Exception as e:
+                st.error(f"Failed to update profile: {e}")
+
+    with c2:
+        st.markdown('<div class="section-header"><h2>Update Password</h2></div>', unsafe_allow_html=True)
+        new_pass = st.text_input("New Password", type="password")
+        if st.button("Update Password"):
+            if new_pass:
+                try:
+                    supabase.auth.update_user({"password": new_pass})
+                    st.success("Password updated!")
+                except Exception as e:
+                    st.error(f"Failed to update password: {e}")
+            else:
+                st.warning("Please enter a new password.")
 
 def main():
     if not st.session_state.get("logged_in", False):
@@ -1711,7 +1867,7 @@ def main():
 
     model_path = os.path.join(OUTPUT_DIR, "churn_prediction_model.pkl")
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
-    model_data = load_model(model_path, model_modified_time)
+    model_data = load_model()
 
     if   "Overview"            in page: page_overview(df, notes)
     elif "Candidate Explorer"  in page: page_candidate_explorer(df, notes)
