@@ -49,11 +49,11 @@ from xgboost import XGBClassifier
 
 base_dir = os.getcwd()
 
-input_dir = base_dir
+input_dir = os.path.join(base_dir, 'data')
 
 enrolled_file = os.path.join(input_dir, 'Endrolled & registred.xlsx')
 crm_file = os.path.join(input_dir, 'CRM-All contacts.xlsx')
-notes_file = os.path.join(input_dir, 'All Notes-Contacts_copy - Copy.xlsx')
+notes_file = os.path.join(input_dir, 'All Notes-Contacts_copy.xlsx')
 
 enrolled = pd.read_excel(enrolled_file)
 crm = pd.read_excel(crm_file)
