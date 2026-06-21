@@ -811,9 +811,9 @@ def page_live_predictor():
  
             submitted = st.form_submit_button("Predict Churn")
  
-            if submitted:
+        if submitted:
          # Create a DataFrame from user inputs
-               input_data = pd.DataFrame([{
+            input_data = pd.DataFrame([{
                'Experience': experience,
                'Semester': semester,
                'Year of Graduation': year_of_graduation,
@@ -838,7 +838,8 @@ def page_live_predictor():
                'Track Interested': track_interested,
                'Mode of Program Joined': mode_of_program_joined,
                'Batch Assigned to': batch_assigned_to,
-               'Gender': gender}])
+               'Gender': gender
+            }])
  
          # --- Preprocessing steps for input_data, mirroring the notebook ---
          # 1. Standardize course (simplified for Streamlit demo)
