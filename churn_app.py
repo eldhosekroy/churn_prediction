@@ -2411,6 +2411,7 @@ model_data = {
     'model': final_model,
     'model_name': final_model_name,
     'model_display_name': final_model_name, # Can be set differently if needed
+    'available_models': regularized_models, # Save all tuned models for the live predictor UI
     'scaler': scaler,
     'feature_columns': feature_columns,
     'label_encoders': label_encoders,

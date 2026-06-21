@@ -1475,7 +1475,7 @@ def page_live_predictor(df, model_data):
     st.markdown("""
     <div class="page-header">
         <h1><i class="fa-solid fa-robot"></i> Live Churn Predictor</h1>
-        <p>Dynamic AI predictor based on the active model schema.</p>
+        <p>Dynamic AI predictor based on the active model schema. Fill in candidate details to assess risk.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1483,24 +1483,41 @@ def page_live_predictor(df, model_data):
         st.error("Could not load churn_prediction_model.pkl")
         return
 
-    model           = model_data['model']
+    available_models = model_data.get('available_models', {})
+    
+    if not available_models:
+        # Fallback to single model if available_models is missing (older model format)
+        available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
+    
+    # Model Selection UI
+    st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
+    
+    col_ai, _ = st.columns([1, 2])
+    with col_ai:
+        selected_model_name = st.selectbox(
+            "Select AI Model",
+            options=list(available_models.keys()),
+            help="Choose which trained algorithm to use for the prediction."
+        )
+    
+    model = available_models[selected_model_name]
+    
     feature_columns = model_data.get('feature_columns', [])
     categorical_feat= model_data.get('categorical_features', [])
     numerical_feat  = model_data.get('numerical_features', [])
     label_encoders  = model_data.get('label_encoders', {})
+    scaler          = model_data.get('scaler', None)
 
-    st.markdown("### Enter Candidate Details")
+    st.markdown("<br>", unsafe_allow_html=True)
     
     input_data = {}
     cols = st.columns(3)
     
     for i, col in enumerate(categorical_feat):
         with cols[i % 3]:
-            # Get unique values from encoder classes if available
             opts = ["Unknown"]
             if col in label_encoders:
                 opts = list(label_encoders[col].classes_)
-            # Handle potential unhashable lists inside classes_
             opts = [str(x) for x in opts]
             input_data[col] = st.selectbox(f"{col}", sorted(opts), key=f"cat_{col}")
             
@@ -1513,7 +1530,7 @@ def page_live_predictor(df, model_data):
     if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
         input_df = pd.DataFrame([input_data])
         
-        # Apply label encoders
+        # Apply label encoders carefully
         for col in categorical_feat:
             if col in input_df.columns and col in label_encoders:
                 le = label_encoders[col]
@@ -1524,34 +1541,91 @@ def page_live_predictor(df, model_data):
                     input_df[col] = 0
 
         X = input_df[feature_columns].copy()
+        
         for c in numerical_feat:
             if c not in X.columns:
                 X[c] = 0.0
 
+        if scaler:
+            try:
+                X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
+            except Exception as e:
+                pass # If scaler fails, we just continue with raw values
+
         try:
             pred = model.predict(X)[0]
             prob = model.predict_proba(X)[0]
-            churn_prob = prob[1] * 100 if len(prob) > 1 else (100 if pred == 1 else 0)
+            churn_prob = prob[1] if len(prob) > 1 else (1.0 if pred == 1 else 0.0)
             
-            st.markdown("<br>", unsafe_allow_html=True)
-            if pred == 1:
+            # Result Display identical to app.py
+            r1, r2, r3 = st.columns([1.2, 1.2, 1.6])
+            with r1:
+                if pred == 1:
+                    st.markdown(f"""
+                    <div class="prediction-box-churn" style="height:100%;">
+                        <div class="pred-label" style="color:#f87171;"><i class="fa-solid fa-circle-xmark"></i></div>
+                        <div style="font-size:24px; font-weight:800; color:#f87171; margin-bottom:8px;">HIGH CHURN RISK</div>
+                        <div class="pred-sub">This candidate is likely to NOT join training</div>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="prediction-box-safe" style="height:100%;">
+                        <div class="pred-label" style="color:#34d399;"><i class="fa-solid fa-circle-check"></i></div>
+                        <div style="font-size:24px; font-weight:800; color:#34d399; margin-bottom:8px;">LOW CHURN RISK</div>
+                        <div class="pred-sub">This candidate is likely to join training</div>
+                    </div>""", unsafe_allow_html=True)
+                    
+            with r2:
+                gauge = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=round(churn_prob * 100, 1),
+                    title={"text": "Churn Probability", "font": {"color": "#94a3b8", "size": 14}},
+                    number={"suffix": "%", "font": {"color": "#e2e8f0", "size": 36}},
+                    gauge={
+                        "axis": {"range": [0, 100], "tickcolor": "#475569"},
+                        "bar":  {"color": "#f87171" if churn_prob > 0.5 else "#34d399", "thickness": 0.3},
+                        "bgcolor": "rgba(0,0,0,0)",
+                        "steps": [
+                            {"range": [0, 30],   "color": "rgba(52,211,153,0.15)"},
+                            {"range": [30, 60],  "color": "rgba(251,191,36,0.15)"},
+                            {"range": [60, 100], "color": "rgba(239,68,68,0.15)"},
+                        ],
+                        "threshold": {"value": 50, "line": {"color": "#fff", "width": 2}, "thickness": 0.8}
+                    }
+                ))
+                gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(family='Inter', color='#94a3b8'),
+                                     margin=dict(l=20, r=20, t=40, b=20), height=250)
+                st.plotly_chart(gauge, use_container_width=True)
+                
+            with r3:
+                risk_level = "High" if churn_prob > 0.6 else ("Medium" if churn_prob > 0.35 else "Low")
+                action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
+                
                 st.markdown(f"""
-                <div class="prediction-box-churn">
-                    <div class="pred-label" style="color:#f87171;">CHURN RISK</div>
-                    <div class="pred-sub">Probability: <b style="color:#ffffff;">{churn_prob:.1f}%</b></div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="prediction-box-safe">
-                    <div class="pred-label" style="color:#34d399;">ACTIVE CANDIDATE</div>
-                    <div class="pred-sub">Probability of churn: <b style="color:#ffffff;">{churn_prob:.1f}%</b></div>
+                <div class="candidate-card" style="margin-top:0; height:100%;">
+                    <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Risk Assessment</div>
+                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
+                        <span style="color:#64748b;">Churn Probability</span>
+                        <b style="color:#e2e8f0;">{churn_prob*100:.1f}%</b>
+                    </div>
+                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
+                        <span style="color:#64748b;">Risk Level</span>
+                        <b style="color:#e2e8f0;">{risk_level}</b>
+                    </div>
+                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
+                        <span style="color:#64748b;">Using Model</span>
+                        <b style="color:#e2e8f0;">{selected_model_name}</b>
+                    </div>
+                    <hr style="border-color:rgba(255,255,255,0.2); margin:12px 0;">
+                    <div style="font-size:12px; color:#64748b;">
+                        {action_req}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Prediction failed: {e}")
+            st.error(f"Prediction failed: {e}\\n\\nPlease ensure all required inputs are provided.")
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────# ─────────────────────────────────────────────
 # PAGE 6 — MODEL PERFORMANCE
 # ─────────────────────────────────────────────
 def page_model_performance(df, model_data):
