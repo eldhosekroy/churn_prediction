@@ -1520,6 +1520,8 @@ def page_live_predictor(df, model_data):
     st.markdown(
         f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
 
+    df = df[df['churn'].isin([0, 1])].copy()
+
     col1, col2, col3 = st.columns(3)
     with col1:
         gender = st.selectbox("Gender", sorted(df['Gender'].unique()), key="p_gender")
@@ -1539,10 +1541,7 @@ def page_live_predictor(df, model_data):
         experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
         year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
                                              value=2024)
-        batch_assigned_to = st.selectbox("Batch Assigned to",
-                                         ['Not assigned', '2024-01-01 00:00:00', '2025-01-01 00:00:00',
-                                          '2026-02-25 00:00:00', 'First Choice', '2026-06-24 00:00:00',
-                                          '2025-03-01 00:00:00', '2026-12-25 00:00:00'])
+        batch_assigned_to = st.selectbox("Batch Assigned to",sorted(df['Batch Assigned to'].unique()), key="p_ba")
 
     st.markdown('<div class="section-header"><h2>Call Inputs</h2></div>', unsafe_allow_html=True)
 
@@ -1616,27 +1615,6 @@ def page_live_predictor(df, model_data):
 
         input_df = pd.DataFrame([input_data])
 
-        dummy_df = pd.DataFrame(columns=feature_columns)
-        processed_input = pd.get_dummies(input_data, columns=categorical_feat, drop_first=True)
-
-        # Align columns - add missing columns with 0 and remove extra ones
-        for col in feature_columns:
-            if col not in processed_input.columns:
-                processed_input[col] = 0
-        processed_input = processed_input[feature_columns]  # Ensure order and presence
-
-        # Scale numerical features
-        processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
-
-
-        # Add any missing model features with safe defaults
-        for col in feature_columns:
-            if col not in input_df.columns:
-                if col in numerical_feat:
-                    input_df[col] = 0
-                else:
-                    input_df[col] = 'Unknown'
-
         # Apply label encoders carefully
         for col in categorical_feat:
             if col in input_df.columns and col in label_encoders:
@@ -1645,24 +1623,60 @@ def page_live_predictor(df, model_data):
                 if val in le.classes_:
                     input_df[col] = le.transform([val])[0]
                 else:
-                    input_df[col] = 0
+                    input_df[col] = -1
 
-        X = input_df[feature_columns].copy()
+        # Scale numerical features using the fitted scaler
+        #input_df[numerical_feat] = scaler.transform(input_df[numerical_feat])
+
+        #dummy_df = pd.DataFrame(columns = feature_columns)
+        processed_input = pd.get_dummies(input_df, columns = categorical_feat, drop_first=True)
+
+        # STEP 3: Align with training features - THIS IS CRITICAL
+        # Remove columns that aren't in training
+        cols_to_drop = [col for col in processed_input.columns if col not in feature_columns]
+        if cols_to_drop:
+            processed_input = processed_input.drop(columns=cols_to_drop)
+
+        # Align columns - add missing columns with 0 and remove extra ones
+        for col in feature_columns:
+            if col not in processed_input.columns:
+                processed_input[col] = 0
+
+        processed_input = processed_input[feature_columns]  # Ensure order and presence
+
+        # Scale numerical features
+        #processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
+
+        # Add any missing model features with safe defaults
+        #for col in feature_columns:
+        #    if col not in input_df.columns:
+        #        if col in numerical_feat:
+        #            input_df[col] = 0
+        #        else:
+        #            input_df[col] = 'Unknown'
+        Y = processed_input.copy()
+        X = scaler.transform(Y)
+
+
+        #X = X.values.astype(float)
+        #X = processed_input.values.astype(float)
+        #X = scaler.transform(X)
+        #X = input_df[feature_columns].copy()
         
-        for c in numerical_feat:
-            if c not in X.columns:
-                X[c] = 0
+        #for c in numerical_feat:
+        #    if c not in X.columns:
+        #        X[c] = 0
 
 
-        X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
+        #X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
                 # If scaler fails, we just continue with raw values
 
         try:
             #pred = model.predict(X)[0]
             #prob = model.predict_proba(X)[0][1]
             # --- Prediction ---
-            prob = model.predict_proba(processed_input)[:, 1][0]
-            pred = model.predict(processed_input)[0]
+            prob = float(model.predict_proba(X)[:, 1][0])
+            pred = int(model.predict(X)[0])
             #churn_prob = prob[1] if len(prob) > 1 else (1.0 if pred == 1 else 0.0)
 
             # Result Display identical to app.py
@@ -1722,7 +1736,7 @@ def page_live_predictor(df, model_data):
                     </div>
                     <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
                         <span style="color:#64748b;">Using Model</span>
-                        <b style="color:#e2e8f0;">{model}</b>
+                        <b style="color:#e2e8f0;">{model_data.get('model_display_name')}</b>
                     </div>
                     <hr style="border-color:rgba(255,255,255,0.2); margin:12px 0;">
                     <div style="font-size:12px; color:#64748b;">
