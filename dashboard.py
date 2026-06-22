@@ -46,6 +46,13 @@ from supabase import create_client, Client
 
 load_dotenv(override=True)
 
+# Load company logo SVG
+try:
+    with open("RP2_full.svg", "r", encoding="utf-8") as f:
+        svg_logo = f.read()
+except Exception:
+    svg_logo = None
+
 url: str = os.environ.get("SUPABASE_URL", "")
 key: str = os.environ.get("SUPABASE_KEY", "")
 
@@ -352,7 +359,7 @@ def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_tex
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="ChurnSense AI – Candidate Analytics",
-    page_icon="https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/bullseye.svg",
+    page_icon="RP2.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -757,15 +764,25 @@ PALETTE      = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#3b
 # ─────────────────────────────────────────────
 def page_auth():
     st.markdown("<div style='text-align:center; padding:50px 0;'>", unsafe_allow_html=True)
-    st.markdown("""
-        <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 42px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
-            <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
-            <span style="font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
-        </div>
-        <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-            Executive Portal
-        </div>
-    """, unsafe_allow_html=True)
+    if svg_logo:
+        st.markdown(f"""
+            <div style="width: 380px; margin: 0 auto; padding-bottom: 10px;">
+                {svg_logo}
+            </div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+                Executive Portal
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 42px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
+                <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
+                <span style="font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
+            </div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+                Executive Portal
+            </div>
+        """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     if supabase is None:
@@ -832,17 +849,29 @@ def page_auth():
 
 def sidebar():
     with st.sidebar:
-        st.markdown("""
-        <div style="text-align:center; padding: 25px 0 20px 0; background: linear-gradient(180deg, rgba(30,41,59,0.4) 0%, transparent 100%); border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 15px;">
-            <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
-                <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
-                <span style="font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
+        if svg_logo:
+            st.markdown(f"""
+            <div style="text-align:center; padding: 25px 0 20px 0; background: linear-gradient(180deg, rgba(30,41,59,0.4) 0%, transparent 100%); border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 15px;">
+                <div style="width: 80%; margin: 0 auto; padding-bottom: 5px;">
+                    {svg_logo}
+                </div>
+                <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+                    Candidate Analytics
+                </div>
             </div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-                Candidate Analytics
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="text-align:center; padding: 25px 0 20px 0; background: linear-gradient(180deg, rgba(30,41,59,0.4) 0%, transparent 100%); border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 15px;">
+                <div style="font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1;">
+                    <span style="color: #f8fafc;">Churn</span><span style="background: -webkit-linear-gradient(45deg, #a78bfa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sense</span>
+                    <span style="font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
+                </div>
+                <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
+                    Candidate Analytics
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Overview"
@@ -1490,25 +1519,30 @@ def page_live_predictor(df, model_data):
         st.error("Could not load churn_prediction_model.pkl")
         return
 
-    #available_models = model_data.get('available_models', {})
+    available_models = model_data.get('available_models', {})
 
-    #if not available_models:
+    if not available_models:
         # Fallback to single model if available_models is missing (older model format)
-    #    available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
+        available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
     
     # Model Selection UI
-    #st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
     
-    #col_ai, _ = st.columns([1, 2])
-    #with col_ai:
-    #    selected_model_name = st.selectbox(
-    #       "Select AI Model",
-    #        options=list(available_models.keys()),
-    #        help="Choose which trained algorithm to use for the prediction."
-    #    )
+    llm_options = ["Gemini 2.5 Flash", "Groq (Llama 3)", "Hugging Face (Mistral)"]
+    ml_options = list(available_models.keys())
+    all_options = llm_options + ml_options
     
-    #model = available_models[selected_model_name]
-    model = model_data['model']
+    col_ai, _ = st.columns([1, 2])
+    with col_ai:
+        selected_model_name = st.selectbox(
+            "Select AI Model",
+            options=all_options,
+            help="Choose which trained algorithm or AI to use for the prediction."
+        )
+    
+    is_llm = selected_model_name in llm_options
+    if not is_llm:
+        model = available_models[selected_model_name]
     feature_columns = model_data.get('feature_columns', [])
     categorical_feat= model_data.get('categorical_features', [])
     numerical_feat  = model_data.get('numerical_features', [])
@@ -1613,73 +1647,77 @@ def page_live_predictor(df, model_data):
             'Gender': gender
         }
 
-        input_df = pd.DataFrame([input_data])
+        if not is_llm:
+            input_df = pd.DataFrame([input_data])
 
-        # Apply label encoders carefully
-        for col in categorical_feat:
-            if col in input_df.columns and col in label_encoders:
-                le = label_encoders[col]
-                val = str(input_df[col].iloc[0])
-                if val in le.classes_:
-                    input_df[col] = le.transform([val])[0]
-                else:
-                    input_df[col] = -1
+            # Apply label encoders carefully
+            for col in categorical_feat:
+                if col in input_df.columns and col in label_encoders:
+                    le = label_encoders[col]
+                    val = str(input_df[col].iloc[0])
+                    if val in le.classes_:
+                        input_df[col] = le.transform([val])[0]
+                    else:
+                        input_df[col] = -1
 
-        # Scale numerical features using the fitted scaler
-        #input_df[numerical_feat] = scaler.transform(input_df[numerical_feat])
+            # Scale numerical features using the fitted scaler
+            #input_df[numerical_feat] = scaler.transform(input_df[numerical_feat])
 
-        #dummy_df = pd.DataFrame(columns = feature_columns)
-        processed_input = pd.get_dummies(input_df, columns = categorical_feat, drop_first=True)
+            #dummy_df = pd.DataFrame(columns = feature_columns)
+            processed_input = pd.get_dummies(input_df, columns = categorical_feat, drop_first=True)
 
-        # STEP 3: Align with training features - THIS IS CRITICAL
-        # Remove columns that aren't in training
-        cols_to_drop = [col for col in processed_input.columns if col not in feature_columns]
-        if cols_to_drop:
-            processed_input = processed_input.drop(columns=cols_to_drop)
+            # STEP 3: Align with training features - THIS IS CRITICAL
+            # Remove columns that aren't in training
+            cols_to_drop = [col for col in processed_input.columns if col not in feature_columns]
+            if cols_to_drop:
+                processed_input = processed_input.drop(columns=cols_to_drop)
 
-        # Align columns - add missing columns with 0 and remove extra ones
-        for col in feature_columns:
-            if col not in processed_input.columns:
-                processed_input[col] = 0
+            # Align columns - add missing columns with 0 and remove extra ones
+            for col in feature_columns:
+                if col not in processed_input.columns:
+                    processed_input[col] = 0
 
-        processed_input = processed_input[feature_columns]  # Ensure order and presence
+            processed_input = processed_input[feature_columns]  # Ensure order and presence
 
-        # Scale numerical features
-        #processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
+            # Scale numerical features
+            #processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
 
-        # Add any missing model features with safe defaults
-        #for col in feature_columns:
-        #    if col not in input_df.columns:
-        #        if col in numerical_feat:
-        #            input_df[col] = 0
-        #        else:
-        #            input_df[col] = 'Unknown'
-        Y = processed_input.copy()
-        X = scaler.transform(Y)
-
-
-        #X = X.values.astype(float)
-        #X = processed_input.values.astype(float)
-        #X = scaler.transform(X)
-        #X = input_df[feature_columns].copy()
-        
-        #for c in numerical_feat:
-        #    if c not in X.columns:
-        #        X[c] = 0
+            # Add any missing model features with safe defaults
+            #for col in feature_columns:
+            #    if col not in input_df.columns:
+            #        if col in numerical_feat:
+            #            input_df[col] = 0
+            #        else:
+            #            input_df[col] = 'Unknown'
+            Y = processed_input.copy()
+            X = scaler.transform(Y)
+        else:
+            X = None
 
 
         #X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
                 # If scaler fails, we just continue with raw values
 
         try:
-            #pred = model.predict(X)[0]
-            #prob = model.predict_proba(X)[0][1]
-            # --- Prediction ---
-            prob = float(model.predict_proba(X)[:, 1][0])
-            pred = int(model.predict(X)[0])
-            #churn_prob = prob[1] if len(prob) > 1 else (1.0 if pred == 1 else 0.0)
+            if is_llm:
+                from llm_integration import get_llm_prediction
+                with st.spinner(f"Querying {selected_model_name} AI Strategist..."):
+                    llm_result = get_llm_prediction(selected_model_name, input_data)
+                    
+                prob = float(llm_result.get("churn_probability", 50.0)) / 100.0
+                pred = 1 if prob >= 0.5 else 0
+                llm_reason = llm_result.get("reason", "No reason provided by LLM.")
+                llm_retention = llm_result.get("retention_strategy", "No strategy provided.")
+                model_display = selected_model_name
+            else:
+                # Scikit-learn normal pipeline
+                prob = float(model.predict_proba(X)[:, 1][0])
+                pred = int(model.predict(X)[0])
+                llm_reason = "Based on machine learning feature importance patterns."
+                llm_retention = "Follow standard operational procedures."
+                model_display = selected_model_name
 
-            # Result Display identical to app.py
+            # Result Display
             r1, r2, r3 = st.columns([1.2, 1.2, 1.6])
             with r1:
                 if pred == 1:
@@ -1723,27 +1761,22 @@ def page_live_predictor(df, model_data):
                 risk_level = "High" if prob > 0.6 else ("Medium" if prob > 0.35 else "Low")
                 action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
                 
-                st.markdown(f"""
-                <div class="candidate-card" style="margin-top:0; height:100%;">
-                    <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;">Risk Assessment</div>
-                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
-                        <span style="color:#64748b;">Churn Probability</span>
-                        <b style="color:#e2e8f0;">{prob*100:.1f}%</b>
-                    </div>
-                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
-                        <span style="color:#64748b;">Risk Level</span>
-                        <b style="color:#e2e8f0;">{risk_level}</b>
-                    </div>
-                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
-                        <span style="color:#64748b;">Using Model</span>
-                        <b style="color:#e2e8f0;">{model_data.get('model_display_name')}</b>
-                    </div>
-                    <hr style="border-color:rgba(255,255,255,0.2); margin:12px 0;">
-                    <div style="font-size:12px; color:#64748b;">
-                        {action_req}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div class="candidate-card" style="margin-top:0; height:100%; display:flex; flex-direction:column;">
+<div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">AI Strategist Assessment</div>
+<div style="font-size:13px; color:#e2e8f0; margin-bottom:8px;">
+<span style="color:#64748b; font-weight:600;">Reasoning:</span><br>
+<i>"{llm_reason}"</i>
+</div>
+<div style="font-size:13px; color:#38bdf8; margin-bottom:10px; flex-grow:1;">
+<span style="color:#64748b; font-weight:600;">Retention Strategy:</span><br>
+<b>{llm_retention}</b>
+</div>
+<hr style="border-color:rgba(255,255,255,0.2); margin:8px 0;">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<div style="font-size:11px; color:#64748b;">Using {model_display}</div>
+<div style="font-size:12px;">{action_req}</div>
+</div>
+</div>""", unsafe_allow_html=True)
         except Exception as e:
             st.error(f"Prediction failed: {e}\\n\\nPlease ensure all required inputs are provided.")
 
