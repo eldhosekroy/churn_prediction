@@ -2565,6 +2565,9 @@ else:
 # Save model evaluation results
 # Ensure 'performance_df' is the correct DataFrame containing overall model evaluation results
 if 'performance_df' in globals():
+    # Reset index to make 'Model' a regular column before saving
+    performance_df.reset_index(inplace=True)
+    performance_df.rename(columns={'index': 'Model'}, inplace=True)
     performance_df.to_csv(os.path.join(output_dir, 'model_evaluation_results.csv'), index=False)
     print(" Model evaluation results saved to: model_evaluation_results.csv")
 else:

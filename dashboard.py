@@ -1786,16 +1786,352 @@ def page_model_performance(df, model_data):
         <p>Live metrics from the pipeline evaluation outputs.</p>
     </div>
     """, unsafe_allow_html=True)
-    
+
+    # ── Churn Reason Analysis ─────────────────────
+    st.markdown(
+        '<div class="section-header"><h2><i class="fa-solid fa-clipboard-list"></i> Why Are Candidates Churning? — Reason Analysis</h2></div>',
+        unsafe_allow_html=True)
+
+    churned_df = df[df['churn'] == 1].copy()
+    active_df = df[df['churn'] == 0].copy()
+
+    r1, r2, r3, r4 = st.columns(4)
+
+    with r1:
+        st.markdown("""<div class="candidate-card">
+                           <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> No notes</div>""",
+                    unsafe_allow_html=True)
+        # Filter for 'not interested' only
+        no_interest_mask = churned_df['final_inferred_reason'].str.lower().str.contains('no notes provided', na=False)
+        no_interest_df = churned_df[no_interest_mask]
+        count = len(no_interest_df)
+        pct = count / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown(f"""
+                <div style="font-size:32px; font-weight:800; color:#fbbf24;">{int(count)}</div>
+                <div style="color:#64748b; font-size:13px;">churned had no interest ({pct:.0f}%)</div>
+                <div style="margin-top:10px; font-size:12px; color:#475569;">Churned candidates made initial payment - but no longer interested, they may have attended or not attended the induction session.</div>
+            </div>""", unsafe_allow_html=True)
+
+    with r2:
+        st.markdown("""<div class="candidate-card">
+                           <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;"><i class="fa-solid fa-phone-slash"></i> No Response Pattern</div>""",
+                    unsafe_allow_html=True)
+        # Filter for 'not interested' only
+        no_resp_mask = churned_df['final_inferred_reason'].str.lower().str.contains('unreachable/not connected', na=False)
+        no_resp_df = churned_df[no_resp_mask]
+        no_resp = len(no_resp_df)
+        pct2 = no_resp / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown(f"""
+                <div style="font-size:32px; font-weight:800; color:#fbbf24;">{int(no_resp)}</div>
+                <div style="color:#64748b; font-size:13px;">churned had no-response calls ({pct2:.0f}%)</div>
+                <div style="margin-top:10px; font-size:12px; color:#475569;">Unreachable candidates rarely convert — early escalation is critical.</div>
+            </div>""", unsafe_allow_html=True)
+
+    with r3:
+        st.markdown("""<div class="candidate-card">
+                           <div style="font-size:13px; font-weight:700; color:#10b981; margin-bottom:12px;"><i class="fa-solid fa-money-bill-wave"></i> Financial Issue</div>""",
+                    unsafe_allow_html=True)
+        no_fin_mask = churned_df['final_inferred_reason'].str.lower().str.contains('financial issue', na=False)
+        no_fin_df = churned_df[no_fin_mask]
+        fin_issue = len(no_fin_df)
+        pct_fin = fin_issue / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown(f"""
+            <div style="font-size:32px; font-weight:800; color:#f87171;">{int(fin_issue)}</div>
+            <div style="color:#64748b; font-size:13px;">Churned with payment discussion ({pct_fin:.0f}%)</div>
+            <div style="margin-top:10px; font-size:12px; color:#475569;">Candidates who had financial concerns or payment-related discussions before churning.</div>
+            </div>""", unsafe_allow_html=True)
+
+    with r4:
+        st.markdown("""<div class="candidate-card">
+                           <div style="font-size:13px; font-weight:700; color:#3b82f6; margin-bottom:12px;"><i class="fa-solid fa-graduation-cap"></i> Joined Another Institution</div>""",
+                    unsafe_allow_html=True)
+        no_join_mask = churned_df['final_inferred_reason'].str.lower().str.contains('joined competitor',
+                                                                                    na=False)
+        no_join_df = churned_df[no_join_mask]
+        joined_competitor = len(no_join_df)
+        pct_joined = joined_competitor / len(churned_df) * 100 if len(churned_df) > 0 else 0
+        st.markdown(f"""
+            <div style="font-size:32px; font-weight:800; color:#f87171;">{int(joined_competitor)}</div>
+            <div style="color:#64748b; font-size:13px;">Churned to join another institute ({pct_joined:.0f}%)</div>
+            <div style="margin-top:10px; font-size:12px; color:#475569;">Candidates who chose to enroll at a competitor institution instead.</div>
+            </div>""", unsafe_allow_html=True)
+
+
     eval_path = os.path.join(OUTPUT_DIR, "model_evaluation_results.csv")
     feat_path = os.path.join(OUTPUT_DIR, "feature_importance_report.csv")
     
     if os.path.exists(eval_path):
         eval_df = pd.read_csv(eval_path)
-        st.markdown("### Evaluation Metrics")
-        st.dataframe(eval_df, use_container_width=True)
+        st.markdown("## Model Evaluation Summary")
+
+        # Normalize column names for consistent access
+        eval_df.columns = eval_df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('-', '_')
+
+        # Extract metrics
+        model_name = eval_df['model'].iloc[0] if 'model' in eval_df.columns else model_data.get('model_display_name',
+                                                                                                'Best Model')
+        accuracy = eval_df['accuracy'].iloc[0] if 'accuracy' in eval_df.columns else None
+        f1_score = eval_df['f1_score'].iloc[0] if 'f1_score' in eval_df.columns else (
+            eval_df['f1 score'].iloc[0] if 'f1 score' in eval_df.columns else None)
+        precision = eval_df['precision'].iloc[0] if 'precision' in eval_df.columns else None
+        recall = eval_df['recall'].iloc[0] if 'recall' in eval_df.columns else None
+        roc_auc = eval_df['roc_auc'].iloc[0] if 'roc_auc' in eval_df.columns else (
+            eval_df['roc-auc'].iloc[0] if 'roc-auc' in eval_df.columns else None)
+        training_time = eval_df['training_time'].iloc[0] if 'training_time' in eval_df.columns else None
+
+        # ── Key Metrics Cards ──
+        st.markdown("### Key Performance Indicators")
+
+        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+
+        # Accuracy Card
+        with metric_col1:
+            acc_display = f"{accuracy * 100:.2f}%" if accuracy is not None else "N/A"
+            acc_color = "#34d399" if (accuracy and accuracy >= 0.85) else (
+                "#fbbf24" if (accuracy and accuracy >= 0.70) else "#f87171")
+            st.markdown(f"""
+                <div class="metric-card" style="border-left: 4px solid {acc_color};">
+                    <div class="metric-label">Accuracy</div>
+                    <div class="metric-value" style="color:{acc_color};">{acc_display}</div>
+                    <div class="metric-sub">Classification accuracy</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # F1 Score Card
+        with metric_col2:
+            f1_display = f"{f1_score * 100:.2f}%" if f1_score is not None else "N/A"
+            f1_color = "#34d399" if (f1_score and f1_score >= 0.80) else (
+                "#fbbf24" if (f1_score and f1_score >= 0.60) else "#f87171")
+            st.markdown(f"""
+                <div class="metric-card" style="border-left: 4px solid {f1_color};">
+                    <div class="metric-label">F1 Score</div>
+                    <div class="metric-value" style="color:{f1_color};">{f1_display}</div>
+                    <div class="metric-sub">Harmonic mean of precision & recall</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Precision Card
+        with metric_col3:
+            prec_display = f"{precision * 100:.2f}%" if precision is not None else "N/A"
+            prec_color = "#34d399" if (precision and precision >= 0.80) else (
+                "#fbbf24" if (precision and precision >= 0.60) else "#f87171")
+            st.markdown(f"""
+                <div class="metric-card" style="border-left: 4px solid {prec_color};">
+                    <div class="metric-label">Precision</div>
+                    <div class="metric-value" style="color:{prec_color};">{prec_display}</div>
+                    <div class="metric-sub">True positive rate</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Recall Card
+        with metric_col4:
+            rec_display = f"{recall * 100:.2f}%" if recall is not None else "N/A"
+            rec_color = "#34d399" if (recall and recall >= 0.80) else (
+                "#fbbf24" if (recall and recall >= 0.60) else "#f87171")
+            st.markdown(f"""
+                <div class="metric-card" style="border-left: 4px solid {rec_color};">
+                    <div class="metric-label">Recall</div>
+                    <div class="metric-value" style="color:{rec_color};">{rec_display}</div>
+                    <div class="metric-sub">Sensitivity / Hit rate</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ── Secondary Metrics Row ──
+        sec_col1, sec_col2, sec_col3 = st.columns(3)
+
+        # ROC-AUC Card
+        with sec_col1:
+            auc_display = f"{roc_auc * 100:.2f}%" if roc_auc is not None else "N/A"
+            auc_color = "#34d399" if (roc_auc and roc_auc >= 0.85) else (
+                "#fbbf24" if (roc_auc and roc_auc >= 0.70) else "#f87171")
+            st.markdown(f"""
+                <div class="metric-card secondary" style="border-left: 4px solid {auc_color};">
+                    <div class="metric-label">ROC-AUC</div>
+                    <div class="metric-value" style="color:{auc_color};">{auc_display}</div>
+                    <div class="metric-sub">Area under ROC curve</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Training Time Card
+        with sec_col2:
+            if training_time is not None:
+                if training_time < 60:
+                    time_display = f"{training_time:.2f}s"
+                elif training_time < 3600:
+                    time_display = f"{training_time / 60:.2f}m"
+                else:
+                    time_display = f"{training_time / 3600:.2f}h"
+            else:
+                time_display = "N/A"
+            st.markdown(f"""
+                <div class="metric-card secondary">
+                    <div class="metric-label">Training Time</div>
+                    <div class="metric-value" style="color:#06b6d4;">{time_display}</div>
+                    <div class="metric-sub">Model training duration</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Training Data Info
+        with sec_col3:
+            if model_data.get('training_data_shape'):
+                shape = model_data.get('training_data_shape')
+                st.markdown(f"""
+                    <div class="metric-card secondary">
+                        <div class="metric-label">Training Data</div>
+                        <div class="metric-value" style="color:#6366f1;">{shape[0]:,}</div>
+                        <div class="metric-sub">{shape[1]} features</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div class="metric-card secondary">
+                        <div class="metric-label">Training Data</div>
+                        <div class="metric-value" style="color:#6366f1;">N/A</div>
+                        <div class="metric-sub">Not available</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+
+        # ── Detailed Metrics Table ──
+        st.markdown("### Detailed Metrics Breakdown")
+
+        # Format the dataframe for display
+        display_df = eval_df.copy()
+
+        # Format numeric columns to percentage where appropriate
+        for col in ['accuracy', 'f1_score', 'f1 score', 'precision', 'recall', 'roc_auc', 'roc-auc']:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].apply(
+                    lambda x: f"{x * 100:.2f}%" if isinstance(x, (int, float)) else str(x))
+
+        # Format training time
+        if 'training_time' in display_df.columns:
+            display_df['training_time'] = display_df['training_time'].apply(
+                lambda x: f"{x:.3f}s" if isinstance(x, (int, float)) else str(x)
+            )
+
+        # Create styled HTML table
+        def create_styled_table(df, table_id):
+            headers = df.columns.tolist()
+
+            html = f"""
+                <style>
+                    #{table_id} {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-family: 'Inter', sans-serif;
+                        font-size: 14px;
+                        margin: 10px 0;
+                    }}
+                    #{table_id} thead {{}}
+                    #{table_id} th {{
+                        background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+                        color: #e2e8f0;
+                        padding: 14px 18px;
+                        text-align: left;
+                        font-weight: 600;
+                        font-size: 12px;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                        border-bottom: 2px solid #4f46e5;
+                    }}
+                    #{table_id} td {{
+                        padding: 12px 18px;
+                        border-bottom: 1px solid #334155;
+                        color: #cbd5e1;
+                    }}
+                    #{table_id} tr {{ background: rgba(30, 41, 59, 0.5); }}
+                    #{table_id} tr:hover {{ background: rgba(99, 102, 241, 0.15); }}
+                    #{table_id} tr:last-child td {{ border-bottom: none; }}
+                    .highlight-cell {{
+                        font-weight: 700;
+                        color: #06b6d4;
+                    }}
+                </style>
+                <table id="{table_id}">
+                    <thead>
+                        <tr>{"".join([f'<th>{h.replace("_", " ").title()}</th>' for h in headers])}</tr>
+                    </thead>
+                    <tbody>
+                """
+
+            for _, row in df.iterrows():
+                html += "<tr>"
+                for col, val in zip(headers, row):
+                    cell_class = 'highlight-cell' if col in ['accuracy', 'f1_score', 'f1 score'] and '%' in str(
+                        val) else ''
+                    html += f'<td class="{cell_class}">{val}</td>'
+                html += "</tr>"
+
+            html += "</tbody></table>"
+            return html
+
+        st.markdown(create_styled_table(display_df, "metrics-table"), unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── Model Configuration Info ──
+        st.markdown("### Model Configuration")
+
+        config_col1, config_col2, config_col3, config_col4 = st.columns(4)
+
+        with config_col1:
+            st.markdown(f"""
+                <div class="config-card">
+                    <div class="config-icon"><i class="fa-solid fa-brain"></i></div>
+                    <div class="config-label">Model</div>
+                    <div class="config-value">{model_name}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with config_col2:
+            balance = model_data.get('balance_method', 'N/A')
+            st.markdown(f"""
+                <div class="config-card">
+                    <div class="config-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+                    <div class="config-label">Balance Method</div>
+                    <div class="config-value">{format_balance_method(balance)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with config_col3:
+            n_features = model_data.get('training_data_shape', (0, 0))[1]
+            st.markdown(f"""
+                <div class="config-card">
+                    <div class="config-icon"><i class="fa-solid fa-layer-group"></i></div>
+                    <div class="config-label">Features</div>
+                    <div class="config-value">{n_features}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with config_col4:
+            class_dist = model_data.get('class_distribution_train', {})
+            if class_dist:
+                ratio = class_dist.get(1, 0) / class_dist.get(0, 1) if class_dist.get(0, 0) > 0 else 0
+                st.markdown(f"""
+                    <div class="config-card">
+                        <div class="config-icon"><i class="fa-solid fa-chart-pie"></i></div>
+                        <div class="config-label">Class Ratio</div>
+                        <div class="config-value">{ratio:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div class="config-card">
+                        <div class="config-icon"><i class="fa-solid fa-chart-pie"></i></div>
+                        <div class="config-label">Class Ratio</div>
+                        <div class="config-value">N/A</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
     else:
-        st.info("Evaluation results not found.")
+         st.error(" Evaluation results not found")
+
+
+    #else:
+    #    st.info("Evaluation results not found.")
         
     if os.path.exists(feat_path):
         feat_df = pd.read_csv(feat_path).head(15)
