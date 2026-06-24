@@ -1782,6 +1782,92 @@ def page_live_predictor(df, model_data):
 def page_model_performance(df, model_data):
     st.markdown("""
     <div class="page-header">
+        <h1><i class="fa-solid fa-chart-line"></i> Model Performance</h1>
+        <p>Evaluation metrics, feature importance, and model comparison for the churn prediction model.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if model_data is None:
+        st.error("Model file not found.")
+        return
+
+    model           = model_data['model']
+    feature_columns = model_data['feature_columns']
+    balance_method  = model_data.get('balance_method', 'None')
+    balance_label   = format_balance_method(balance_method)
+    balance_note    = balance_method_description(balance_method)
+    model_name      = model_data.get('model_display_name') or model_data.get('model_name') or model.__class__.__name__
+    friendly_model  = {
+        'RandomForestClassifier': 'Random Forest',
+        'GradientBoostingClassifier': 'Gradient Boosting',
+        'XGBClassifier': 'XGBoost',
+        'LogisticRegression': 'Logistic Regression',
+        'Random Forest (Regularized)': 'Random Forest (Regularized)',
+        'Gradient Boosting (Regularized)': 'Gradient Boosting (Regularized)',
+        'XGBoost (Regularized)': 'XGBoost (Regularized)'
+    }.get(model_name, model_name)
+
+    balance_select_reason = {
+        'none': 'No balancing method was selected because the original training distribution achieved the best validation performance.',
+        'class_weight': 'Class weights were chosen because they improved minority churn detection while keeping the full training set intact.',
+        'oversample': 'Random oversampling was selected because it produced the best validation F1 for the minority churn class.',
+        'undersample': 'Random undersampling was selected because it improved validation performance by balancing class representation.',
+        'smote': 'SMOTE was selected because synthetic minority samples improved validation F1 and class generalization.'
+    }.get(str(balance_method).lower(), 'Selected based on validation performance during class imbalance evaluation.')
+
+    selected_model = friendly_model
+
+    # ── Model Info ────────────────────────────────
+    st.markdown('<div class="section-header"><h2>Model Information</h2></div>', unsafe_allow_html=True)
+    i1, i2, i3, i4, i5 = st.columns(5)
+    with i1:
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-robot"></i></div>
+                <div class=\"kpi-title\">Algorithm</div>
+                <div class=\"kpi-value\" style=\"color:#a78bfa; font-size:16px; margin-top:8px;\">{friendly_model}</div>
+                <div class=\"kpi-sub\">Deployed model</div></div>""", unsafe_allow_html=True)
+    with i2:
+        estimator_value = getattr(model, 'n_estimators', None) or getattr(model, 'n_estimators_', 'N/A')
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-tree"></i></div>
+                <div class=\"kpi-title\">Estimators</div>
+                <div class=\"kpi-value\" style=\"color:#60a5fa;\">{estimator_value}</div>
+                <div class=\"kpi-sub\">Decision trees</div></div>""", unsafe_allow_html=True)
+    with i3:
+        max_depth_value = getattr(model, 'max_depth', 'N/A')
+        st.markdown(f"""<div class=\"kpi-card\"><div class=\"kpi-icon\"><i class="fa-solid fa-ruler-combined"></i></div>
+                <div class=\"kpi-title\">Max Depth</div>
+                <div class=\"kpi-value\" style=\"color:#34d399;\">{max_depth_value}</div>
+                <div class=\"kpi-sub\">Tree depth limit</div></div>""", unsafe_allow_html=True)
+    with i4:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-hashtag"></i></div>
+                <div class="kpi-title">Features Used</div>
+                <div class="kpi-value" style="color:#fbbf24;">{len(feature_columns)}</div>
+                <div class="kpi-sub">Input dimensions</div></div>""", unsafe_allow_html=True)
+    with i5:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+                <div class="kpi-title">Balancing</div>
+                <div class="kpi-value" style="color:#fbbf24; font-size:16px; margin-top:8px;">{balance_label}</div>
+                <div class="kpi-sub">Imbalance handling</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header"><h2>Balancing Technique</h2></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+        <div class="candidate-card">
+            <div style="display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:13px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px;">Selected Method</div>
+                    <div style="font-size:24px; font-weight:800; color:#fbbf24; margin-top:4px;">{balance_label}</div>
+                </div>
+                <div style="max-width:620px; color:#94a3b8; font-size:13px; line-height:1.5;">{balance_note}</div>
+            </div>
+            <div style="margin-top:14px; color:#94a3b8; font-size:13px; line-height:1.6;">
+                <strong>Why this method?</strong> {balance_select_reason}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header">
         <h1><i class="fa-solid fa-chart-bar"></i> Model Performance Tracker</h1>
         <p>Live metrics from the pipeline evaluation outputs.</p>
     </div>
