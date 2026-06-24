@@ -26,6 +26,7 @@ from nltk.stem import WordNetLemmatizer
 from collections import Counter
 from nltk.tokenize import sent_tokenize
 
+from sklearn.base import clone
 from sklearn.metrics import roc_curve, RocCurveDisplay
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import train_test_split
@@ -54,9 +55,9 @@ print(f"Artifacts will be saved to: {ARTIFACTS_PATH}")
 
 """#**Data Collection**"""
 
-base_dir = os.getcwd()
+base_dir = os.path.dirname(os.path.abspath(__file__))
+input_dir = os.path.join(base_dir, 'data')
 
-input_dir = base_dir
 
 enrolled_file = os.path.join(input_dir, 'Endrolled & registred.xlsx')
 crm_file = os.path.join(input_dir, 'CRM-All contacts.xlsx')
@@ -374,6 +375,91 @@ def standardize_course_name(course_string):
     return course_string
 
 enrolled['Course'] = enrolled['Course'].apply(standardize_course_name)
+
+def standardize_track_interested(track_string):
+    if pd.isna(track_string) or track_string in ['Not joined', 'Not mentioned', 'Not Mentioned']:
+        return track_string
+
+    track_string = str(track_string).upper().strip()
+
+    # Define a set of mappings for primary tracks and their common variations
+    # Order matters: more specific/longer phrases should be checked first
+    mappings = {
+        'ROUNDED DS&GENAI PROFESSIONAL': 'ROUNDED DS&GENAI PROFESSIONAL',
+        'GEN AI & PROMPT ENGINEERING': 'GEN AI&PROMPT ENG',
+        'GENAI & PROMPT': 'GEN AI&PROMPT ENG',
+        'MICROSOFT AI ENGINEER': 'AI ENGINEER',
+        'DATA SCIENCE/DATA ANALYTICS': 'DA&DS', # Combined
+        'DATASCIENCE/DATAANALYTICS': 'DA&DS', # Combined with typos
+        'PYTHON FULL STACK': 'FS',
+        'FULL STACK DEVELOPMENT': 'FS', # new variation
+        'FULL STACK': 'FS',
+        'MERN STACK': 'MERN',
+        'DATA ANALYTICS INTERN': 'DA',
+        'DATA ANALYST INTERN': 'DA',
+        'DATA ANALYTICS FRESHER': 'DA',
+        'DATA ANALYST FRESHER': 'DA',
+        'DATA ANALYST': 'DA',
+        'DATA ANALYTICS': 'DA',
+        'DATASCIENCE INTERN': 'DS', # direct abbr + intern
+        'DATASCIENCE FRESHER': 'DS', # direct abbr + fresher
+        'DATA SCIENCE INTERN': 'DS',
+        'DATA SCIENCE FRESHER': 'DS',
+        'DATA SCIENCE': 'DS',
+        'DATASCIENCE': 'DS',
+        'DATAANALYTICS': 'DA', # concatenated
+        'DATAANALYST': 'DA', # concatenated
+        'DATASCIEENCE': 'DS', # common typo
+        'DATAANLYTICS': 'DA', # common typo
+        'DATAANLYST': 'DA', # common typo
+        'PROMPT ENGINEERING': 'PEP',
+        'PYTHON': 'PY',
+        'DS&GENAI': 'DS&GENAI' # keep this specific if found
+    }
+
+    # Apply mappings. Iterate through sorted keys (longer first) to prevent partial matches.
+    for phrase, replacement in sorted(mappings.items(), key=lambda item: len(item[0]), reverse=True):
+        if phrase in track_string:
+            track_string = track_string.replace(phrase, replacement)
+
+    # After applying specific replacements, generalize any remaining 'INTERN', 'FRESHER', 'TRAINEE'
+    # if they are not part of an already replaced phrase
+    track_string = re.sub(r'\b(INTERN|FRESHER|TRAINEE)\b', '', track_string)
+
+    # Consolidate if multiple keywords resulted in abbreviations with extra words
+    if 'DA' in track_string and 'DS' in track_string:
+        track_string = 'DA&DS'
+    elif 'DA' in track_string:
+        track_string = 'DA'
+    elif 'DS' in track_string:
+        track_string = 'DS'
+    elif 'FS' in track_string:
+        track_string = 'FS'
+    elif 'MERN' in track_string:
+        track_string = 'MERN'
+    elif 'PY' in track_string:
+        track_string = 'PY'
+    elif 'PEP' in track_string:
+        track_string = 'PEP'
+    elif 'AI ENGINEER' in track_string:
+        track_string = 'AI ENGINEER'
+    elif 'GEN AI&PROMPT ENG' in track_string:
+        track_string = 'GEN AI&PROMPT ENG'
+    elif 'ROUNDED DS&GENAI PROFESSIONAL' in track_string:
+        track_string = 'ROUNDED DS&GENAI PROFESSIONAL'
+    elif 'DS&GENAI' in track_string:
+        track_string = 'DS&GENAI'
+
+    # Clean up extra spaces one last time
+    track_string = ' '.join(track_string.split())
+
+    # If the string becomes empty or very generic after all processing
+    if track_string == '' or track_string in ['ANALYST', 'ANALYTICS', 'SCIENCE', 'ENGINEER', 'MICROSOFT']:
+        track_string = 'UNSPECIFIED'
+
+    return track_string
+
+enrolled['Track Interested'] = enrolled['Track Interested'].apply(standardize_track_interested)
 
 """#**Feature Engineering**"""
 
@@ -1261,70 +1347,6 @@ plt.tight_layout()
 plt.show()
 
 """## **Churn Prediction Model**"""
-
-print('\n' + '='*80)
-print('STEP: FEATURE IMPORTANCE ANALYSIS')
-print('='*80)
-
-# Assuming final_model is already selected and fitted
-# Check if the final model has feature_importances_ attribute (e.g., Tree-based models)
-if hasattr(final_model, 'feature_importances_'):
-    # Create a DataFrame for feature importances
-    feature_importance_df = pd.DataFrame({
-        'Feature': X_train_processed.columns,
-        'Importance': final_model.feature_importances_
-    })
-
-    # Sort by importance in descending order
-    feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
-
-    print('\nTop 10 Feature Importances for ' + final_model_name + ':\n')
-    print(feature_importance_df.head(10).to_string(index=False))
-
-    # Save feature importance to a CSV file
-    feature_importance_df.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
-    print("\n  Feature importance report saved to: feature_importance_report.csv")
-
-    # Visualize feature importances
-    plt.figure(figsize=(12, 8))
-    sns.barplot(x='Importance', y='Feature', data=feature_importance_df.head(15), palette='viridis', hue='Feature', legend=False)
-    plt.title(f'Top 15 Feature Importances for {final_model_name}', fontsize=16)
-    plt.xlabel('Importance', fontsize=12)
-    plt.ylabel('Feature', fontsize=12)
-    plt.grid(axis='x', linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'feature_importance.png'))
-    plt.show()
-    print("  Feature importance chart saved to: feature_importance.png")
-elif hasattr(final_model, 'coef_'): # For linear models like Logistic Regression
-    # Assuming binary classification, get coefficients for class 1
-    coefficients = final_model.coef_[0]
-    feature_importance_df = pd.DataFrame({
-        'Feature': X_train_processed.columns,
-        'Importance': np.abs(coefficients) # Use absolute value for importance
-    })
-    feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
-
-    print('\nTop 10 Feature Importances (Absolute Coefficients) for ' + final_model_name + ':\n')
-    print(feature_importance_df.head(10).to_string(index=False))
-
-    # Save feature importance to a CSV file
-    feature_importance_df.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
-    print("\n  Feature importance report saved to: feature_importance_report.csv")
-
-    # Visualize feature importances
-    plt.figure(figsize=(12, 8))
-    sns.barplot(x='Importance', y='Feature', data=feature_importance_df.head(15), palette='viridis', hue='Feature', legend=False)
-    plt.title(f'Top 15 Feature Importances (Absolute Coefficients) for {final_model_name}', fontsize=16)
-    plt.xlabel('Absolute Coefficient Value', fontsize=12)
-    plt.ylabel('Feature', fontsize=12)
-    plt.grid(axis='x', linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'feature_importance.png'))
-    plt.show()
-    print("  Feature importance chart saved to: feature_importance.png")
-else:
-    print(f"Feature importance extraction not supported for {final_model_name} (model type: {type(final_model).__name__}).")
 
 """### **Target Variable Creation**
 
@@ -2437,21 +2459,29 @@ print(filtered_churn_reasons)
 
 """#### Feature importance analysis"""
 
+
 print('\n' + '='*80)
-print('FEATURE IMPORTANCE ANALYSIS FOR FINAL MODEL')
+print('STEP: FEATURE IMPORTANCE ANALYSIS')
 print('='*80)
 
-# Ensure final_model is the Decision Tree Classifier
-if final_model_name == 'Decision Tree':
-    # Feature importance for tree-based models
+# Assuming final_model is already selected and fitted
+# Check if the final model has feature_importances_ attribute (e.g., Tree-based models)
+if hasattr(final_model, 'feature_importances_'):
+    # Create a DataFrame for feature importances
     feature_importance_df = pd.DataFrame({
         'Feature': X_train_processed.columns,
         'Importance': final_model.feature_importances_
     })
+
+    # Sort by importance in descending order
     feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
 
-    print(f'\nTop 10 Feature Importances for {final_model_name}:\n')
+    print('\nTop 10 Feature Importances for ' + final_model_name + ':\n')
     print(feature_importance_df.head(10).to_string(index=False))
+
+    # Save feature importance to a CSV file
+    feature_importance_df.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
+    print("\n  Feature importance report saved to: feature_importance_report.csv")
 
     # Visualize feature importances
     plt.figure(figsize=(12, 8))
@@ -2461,10 +2491,38 @@ if final_model_name == 'Decision Tree':
     plt.ylabel('Feature', fontsize=12)
     plt.grid(axis='x', linestyle='--', alpha=0.7)
     plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'feature_importance.png'))
     plt.show()
+    print("  Feature importance chart saved to: feature_importance.png")
+elif hasattr(final_model, 'coef_'): # For linear models like Logistic Regression
+    # Assuming binary classification, get coefficients for class 1
+    coefficients = final_model.coef_[0]
+    feature_importance_df = pd.DataFrame({
+        'Feature': X_train_processed.columns,
+        'Importance': np.abs(coefficients) # Use absolute value for importance
+    })
+    feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
+
+    print('\nTop 10 Feature Importances (Absolute Coefficients) for ' + final_model_name + ':\n')
+    print(feature_importance_df.head(10).to_string(index=False))
+
+    # Save feature importance to a CSV file
+    feature_importance_df.to_csv(os.path.join(output_dir, 'feature_importance_report.csv'), index=False)
+    print("\n  Feature importance report saved to: feature_importance_report.csv")
+
+    # Visualize feature importances
+    plt.figure(figsize=(12, 8))
+    sns.barplot(x='Importance', y='Feature', data=feature_importance_df.head(15), palette='viridis', hue='Feature', legend=False)
+    plt.title(f'Top 15 Feature Importances (Absolute Coefficients) for {final_model_name}', fontsize=16)
+    plt.xlabel('Absolute Coefficient Value', fontsize=12)
+    plt.ylabel('Feature', fontsize=12)
+    plt.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'feature_importance.png'))
+    plt.show()
+    print("  Feature importance chart saved to: feature_importance.png")
 else:
-    print(f"Feature importance extraction not directly supported or implemented for {final_model_name}.")
-    print("Please refer to the existing feature importance cell for the original model used for feature importance analysis.")
+    print(f"Feature importance extraction not supported for {final_model_name} (model type: {type(final_model).__name__}).")
 
 """### **Model saving**"""
 
@@ -2475,7 +2533,9 @@ model_data = {
     'model': final_model,
     'model_name': final_model_name,
     'model_display_name': final_model_name, # Can be set differently if needed
-    'available_models': tuned_models, # Save all tuned models
+    #'available_models': cv_results_df_tuned, # Save all tuned models
+# Save as dictionary mapping model names to results:
+    'available_models': cv_results_df_tuned.set_index('Model').to_dict() if 'Model' in cv_results_df_tuned.columns else {},
     'preprocessor': preprocessor, # Save the preprocessor that contains scaler and encoder
     'feature_columns': feature_columns,
     'categorical_features': categorical_features,
@@ -2493,6 +2553,7 @@ with open(os.path.join(output_dir, 'churn_prediction_model.pkl'), 'wb') as f:
 
 print(" Model saved to: churn_prediction_model.pkl")
 
+print(model_data)
 # Save feature importance report if it was generated
 # The feature_importance_df is generated regardless of the model type if that block is executed.
 if 'feature_importance_df' in globals():

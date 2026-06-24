@@ -1,132 +1,72 @@
 Feature,Importance
-Track Interested_Not joined,20.114818159640905
-Track Interested_Python Full stack,11.169665462068041
-Batch Assigned to_2024-01-01 00:00:00,6.784433119442533
-Source of lead_Infopark website,6.6163866084069864
-Track Interested_Datascience/DataAnalytics,6.092694507880773
-Source of lead_Indeed,6.0381106307218415
-Batch Assigned to_2026-02-25 00:00:00,5.779968978047856
-Batch Assigned to_2026-06-24 00:00:00,5.723227133917341
-Source of lead_Reference,5.64191711427037
-Course_MCA,5.048513870428951
-Course_GRADUATED,4.973303570987719
-Track Interested_Dataanalytics,4.724763951781436
-Source of lead_Digital Marketing (Goat add),4.338886880497637
-Course_OTHERS,4.063500285134219
-Track Interested_Datascience,3.749163919238316
-Course_BTECH,3.5949793259371114
-Track Interested_Data Analytics,3.438514268953805
-Track Interested_Data Science,3.2979353332060666
-Batch Assigned to_2026-10-24 00:00:00,2.5701532278663297
-Track Interested_MERN Stack,2.515787588238832
-Course_NOT MENTIONED,2.4559092128503113
-role_Unknown,2.3153773957131656
-Course_MBA,2.020372754677457
-Course_BCA,2.0105517140801967
-Course_BCOM,1.9738524673033186
-final_inferred_status_Not Joined,1.8115651995054263
-unreachable_not_connected,1.7373236077677727
-background_UNKNOWN,1.563125978856845
-Track Interested_DS,1.4683872708209287
-background_Tech,1.4260621097976496
-Mode of Program Joined_Online,1.412981959736986
-Mode of Program Joined_Not mentioned,1.303379118731719
-Batch Assigned to_Not assigned,1.1646552571496995
-Batch Assigned to_2026-02-24 00:00:00,1.099823479389764
-Mode of Program Joined_Onsite,1.0914761120774807
-Batch Assigned to_2026-01-25 00:00:00,1.0774023217128625
-Course_MSC-IT,1.0303659967906733
-Batch Assigned to_2026-05-24 00:00:00,0.9114557980865858
-final_inferred_status_Joined,0.7603417820266181
-Year of Graduation,0.7050361046665109
-looking_for_job_internship,0.7022298860510918
-Batch Assigned to_2026-11-24 00:00:00,0.6546743568089877
-joined_competitor,0.49035469175833246
-decision_pending,0.413953551496813
-financial_issue,0.40342733157927557
-Followup Email,0.3573003786653405
-Course_BA,0.25882750091673695
-no_notes_provided,0.0659777305564527
-Batch Assigned to_2026-03-24 00:00:00,0.01145418715020335
-Semester,0.0
-Experience,0.0
-Source of lead_Seminar,0.0
-Source of lead_SEO,0.0
-Source of lead_OLX,0.0
-Source of lead_Naukri Paid,0.0
-Source of lead_Linkedin,0.0
-Source of lead_Naukri Ad posting,0.0
-Source of lead_Job Fair,0.0
-Source of lead_Free internship campaign,0.0
-Source of lead_Dm,0.0
-Source of lead_Digital Marketing (Add On),0.0
-Source of lead_DM,0.0
-not_interested,0.0
-Source of lead_Carryover,0.0
-already_working,0.0
-Test,0.0
-Invoice_binary,0.0
-role_Student,0.0
-role_Professional,0.0
-Course_PLUS TWO,0.0
-Course_UNSPECIFIED,0.0
-Course_MA,0.0
-Course_MCOM,0.0
-Course_MSC,0.0
-Course_MTECH,0.0
-Source of lead_infopark,0.0
-Source of lead_free internship,0.0
-Source of lead_dm,0.0
-Source of lead_college referal,0.0
-Course_BSC,0.0
-Course_BSC-IT,0.0
-Course_DIPLOMA,0.0
-Course_DIPLOMA-IT,0.0
-Source of lead_Workshop,0.0
-Source of lead_Website Enquiry,0.0
-Source of lead_Webinar,0.0
-Source of lead_Social media,0.0
-Source of lead_IV,0.0
-Source of lead_Indeed Paid,0.0
-Source of lead_Infopark,0.0
-Source of lead_Enquiry,0.0
-Source of lead_Infopark  website,0.0
-Track Interested_DataAnalytics,0.0
-Track Interested_Dataanalyst,0.0
-Track Interested_Data Analytics Intern,0.0
-Track Interested_Data Analyst Intern,0.0
-Track Interested_Data Analytics Fresher,0.0
-Track Interested_Data Analyst,0.0
-final_inferred_status_Unclear,0.0
-Track Interested_Prompt Engineering,0.0
-Track Interested_PEP,0.0
-Track Interested_Not Mentioned,0.0
-Track Interested_Microsoft AI Engineer,0.0
-Track Interested_GenAI & Prompt,0.0
-Track Interested_MERN,0.0
-Track Interested_Gen Ai & Prompt Engineering,0.0
-Track Interested_Gen Ai & Prompt Engineering Intern,0.0
-Track Interested_Dataanlytics,0.0
-Track Interested_Datascience Internship for freshers,0.0
-Track Interested_GEN AI&PROMPT ENG,0.0
-Track Interested_Data Science Intern,0.0
-Track Interested_Data analyst,0.0
-Track Interested_DataAnalyst,0.0
-Track Interested_ROUNDED DS&GENAI PROFESSIONAL,0.0
-Track Interested_UNSPECIFIED,0.0
-Batch Assigned to_2026-04-25 00:00:00,0.0
-Batch Assigned to_2026-04-24 00:00:00,0.0
-Batch Assigned to_2026-03-25 00:00:00,0.0
-Mode of Program Joined_online hybrid,0.0
-Batch Assigned to_2026-07-25 00:00:00,0.0
-Batch Assigned to_2026-08-24 00:00:00,0.0
-Batch Assigned to_2026-07-24 00:00:00,0.0
-Batch Assigned to_2026-05-25 00:00:00,0.0
-Batch Assigned to_2026-09-24 00:00:00,0.0
-Batch Assigned to_2026-08-25 00:00:00,0.0
-Batch Assigned to_2026-11-25 00:00:00,0.0
-Batch Assigned to_2026-10-25 00:00:00,0.0
-Batch Assigned to_2026-12-24 00:00:00,0.0
-Batch Assigned to_2026-12-25 00:00:00,0.0
-Batch Assigned to_First Choice,0.0
-Gender_Male,0.0
+cat__Track Interested_Not joined,1.728023832795622
+cat__Track Interested_FS,1.726650601989351
+cat__Track Interested_DA,0.27294426920727943
+cat__Track Interested_DS,0.27292050942225643
+cat__Track Interested_DA&DS,0.2728879821695178
+cat__Track Interested_PEP,0.27287973071623145
+cat__Track Interested_Not Mentioned,0.2727882640830496
+cat__Track Interested_UNSPECIFIED,0.27277630478110604
+cat__Track Interested_MERN,0.27276449376229883
+cat__Track Interested_GEN AI&PROMPT ENG,0.27275252430906816
+cat__Track Interested_ROUNDED DS&GENAI PROFESSIONAL,0.27196035633416377
+cat__role_Student,0.2449983674549122
+cat__role_Unknown,0.22185352010359383
+continuous__Year of Graduation,0.12031976509930775
+continuous__Semester,0.03500625600236135
+cat__Course_GRADUATED,0.0007889743671073424
+cat__Course_BSC,0.0007154186695169651
+cat__Course_OTHERS,0.0005854397609241779
+cat__Course_MSC-IT,0.00044831637697248235
+cat__Source of lead_Social media,0.000432680452884828
+cat__Course_BCOM,0.00041496424394837916
+cat__Course_MCA,0.0003359138174445775
+cat__Source of lead_Naukri Paid,0.00032519884190590487
+cat__Course_NOT MENTIONED,0.0002632026726061554
+cat__background_UNKNOWN,0.0002632026726061554
+cat__Source of lead_Free internship campaign,0.0002359000856833049
+cat__Source of lead_Indeed,0.00019791742045649485
+cat__Source of lead_Reference,0.00018845264953348817
+cat__Source of lead_Infopark website,0.00013457356994628356
+cat__background_Tech,0.00013117321130806658
+cat__Course_BCA,0.00013078794369614233
+cat__Source of lead_Digital Marketing (Goat add),0.00011957681961538569
+cat__Source of lead_DM,0.00011854125044314696
+cat__Course_BTECH,0.00011278782714185809
+binary__Followup Email,8.530156212116502e-05
+cat__Mode of Program Joined_Not mentioned,7.04671608282581e-05
+cat__Gender_Male,6.918972246294786e-05
+cat__Mode of Program Joined_Online,4.105659313857757e-05
+cat__Mode of Program Joined_Onsite,2.94105676910128e-05
+cat__Source of lead_Digital Marketing (Add On),0.0
+binary__Test,0.0
+continuous__Experience,0.0
+cat__Course_DIPLOMA,0.0
+cat__Source of lead_Workshop,0.0
+cat__Course_BSC-IT,0.0
+cat__Course_BA,0.0
+cat__Source of lead_infopark,0.0
+cat__Source of lead_Website Enquiry,0.0
+cat__Source of lead_Webinar,0.0
+cat__Source of lead_Seminar,0.0
+cat__Source of lead_Job Fair,0.0
+cat__Source of lead_Naukri Ad posting,0.0
+cat__Source of lead_Linkedin,0.0
+cat__Source of lead_OLX,0.0
+cat__Source of lead_SEO,0.0
+cat__Source of lead_Enquiry,0.0
+cat__Source of lead_IV,0.0
+cat__Source of lead_Infopark,0.0
+cat__Source of lead_Infopark  website,0.0
+cat__Source of lead_Indeed Paid,0.0
+cat__Source of lead_college referal,0.0
+cat__Source of lead_dm,0.0
+cat__Source of lead_free internship,0.0
+cat__Course_UNSPECIFIED,0.0
+cat__Course_PLUS TWO,0.0
+cat__Course_MTECH,0.0
+cat__Course_DIPLOMA-IT,0.0
+cat__Course_MBA,0.0
+cat__Course_MA,0.0
+cat__Course_MCOM,0.0
+cat__Course_MSC,0.0

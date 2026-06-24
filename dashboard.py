@@ -663,7 +663,7 @@ def load_churn_reasons():
 
 @st.cache_data
 def preprocess(df, notes):
-    # Data is already preprocessed by churn_app.py.
+    # Data is already preprocessed by churn_data.py.
     # We just ensure certain columns exist to avoid KeyError in UI
     
     if not df.empty:
@@ -685,17 +685,17 @@ def preprocess(df, notes):
 def load_model():
     try:
         with open(os.path.join(OUTPUT_DIR, 'churn_prediction_model.pkl'), 'rb') as f:
-            data = pickle.load(f)
+            model_data = pickle.load(f)
 
             # Add missing keys with defaults (same as before)
-            if 'model_name' not in data and 'model' in data:
-                data['model_name'] = data['model'].__class__.__name__
-            if 'model_display_name' not in data:
-                data['model_display_name'] = data.get('model_name', 'Unknown Model')
-            if 'balance_method' not in data:
-                data['balance_method'] = 'none'
+            if 'model_name' not in model_data and 'model' in model_data:
+                model_data['model_name'] = model_data['model'].__class__.__name__
+            if 'model_display_name' not in model_data:
+                model_data['model_display_name'] = model_data.get('model_name', 'Unknown Model')
+            if 'best_balance_method' not in model_data:
+                model_data['best_balance_method'] = 'none'
 
-            return data
+            return model_data
     except FileNotFoundError:
         st.error("Model artifacts not found. Please run the notebook to train and save the model.")
         return None
@@ -1521,9 +1521,13 @@ def page_live_predictor(df, model_data):
 
     available_models = model_data.get('available_models', {})
 
-    if not available_models:
-        # Fallback to single model if available_models is missing (older model format)
+    # Check for dict specifically
+    if not isinstance(available_models, dict) or (hasattr(available_models, 'empty') and available_models.empty):
         available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
+
+    #if not available_models:
+    #    # Fallback to single model if available_models is missing (older model format)
+    #    available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
     
     # Model Selection UI
     st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
@@ -1543,12 +1547,14 @@ def page_live_predictor(df, model_data):
     is_llm = selected_model_name in llm_options
     if not is_llm:
         model = available_models[selected_model_name]
+    final_model = model_data.get('model')
     feature_columns = model_data.get('feature_columns', [])
-    categorical_feat= model_data.get('categorical_features', [])
-    numerical_feat  = model_data.get('numerical_features', [])
+    preprocessor = model_data.get('preprocessor', {})
+    categorical_features = model_data.get('categorical_features', [])
+    numerical_features  = model_data.get('numerical_features', [])
     label_encoders  = model_data.get('label_encoders', {})
     scaler          = model_data.get('scaler', None)
-    balance_method = model_data.get('balance_method', 'none')
+    balance_method = model_data.get('best_balance_method', 'none')
 
     st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
     st.markdown(
@@ -1624,15 +1630,6 @@ def page_live_predictor(df, model_data):
             'Year of Graduation': year_of_graduation,
             'Test': int(test_taken),
             'Followup Email': int(followup_email_sent),
-            'Invoice_binary': int(invoice_generated),
-            'joined_competitor': int(joined_competitor),
-            'already_working': int(already_working),
-            'looking_for_job_internship': int(looking_for_job),
-            'not_interested': int(not_interested),
-            'financial_issue': int(financial_issue),
-            'unreachable_not_connected': int(unreachable_not_connected),
-            'decision_pending': int(decision_pending),
-            'no_notes_provided': int(no_notes_provided),
 
             # Categorical features
             'Source of lead': source,
@@ -1640,44 +1637,35 @@ def page_live_predictor(df, model_data):
             'background': background, # Placeholder, ideally derived dynamically from course
             'role': role,# Placeholder, ideally derived dynamically from experience/semester/grad_year
             #'Program_Name': stream,
-            'final_inferred_status': status, # Placeholder, as this comes from notes analysis
             'Track Interested': track_interested,
             'Mode of Program Joined': mode,
-            'Batch Assigned to': batch_assigned_to,
             'Gender': gender
         }
 
         if not is_llm:
             input_df = pd.DataFrame([input_data])
 
-            # Apply label encoders carefully
-            for col in categorical_feat:
-                if col in input_df.columns and col in label_encoders:
-                    le = label_encoders[col]
-                    val = str(input_df[col].iloc[0])
-                    if val in le.classes_:
-                        input_df[col] = le.transform([val])[0]
-                    else:
-                        input_df[col] = -1
+            # The `preprocessor` expects a DataFrame with the original feature names.
+            # `input_df` contains these. `feature_columns` from the saved model refer to the columns *after* preprocessing.
+            processed_input = preprocessor.transform(input_df)
 
-            # Scale numerical features using the fitted scaler
-            #input_df[numerical_feat] = scaler.transform(input_df[numerical_feat])
-
-            #dummy_df = pd.DataFrame(columns = feature_columns)
-            processed_input = pd.get_dummies(input_df, columns = categorical_feat, drop_first=True)
+            # Convert to DataFrame with correct column names for the model if needed
+            processed_input_df = pd.DataFrame(
+                processed_input.toarray() if hasattr(processed_input, 'toarray') else processed_input,
+                columns=feature_columns)
 
             # STEP 3: Align with training features - THIS IS CRITICAL
             # Remove columns that aren't in training
-            cols_to_drop = [col for col in processed_input.columns if col not in feature_columns]
+            cols_to_drop = [col for col in processed_input_df.columns if col not in feature_columns]
             if cols_to_drop:
-                processed_input = processed_input.drop(columns=cols_to_drop)
+                processed_input_df = processed_input_df.drop(columns=cols_to_drop)
 
             # Align columns - add missing columns with 0 and remove extra ones
             for col in feature_columns:
-                if col not in processed_input.columns:
-                    processed_input[col] = 0
+                if col not in processed_input_df.columns:
+                    processed_input_df[col] = 0
 
-            processed_input = processed_input[feature_columns]  # Ensure order and presence
+            processed_input_df = processed_input_df[feature_columns]  # Ensure order and presence
 
             # Scale numerical features
             #processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
@@ -1689,10 +1677,9 @@ def page_live_predictor(df, model_data):
             #            input_df[col] = 0
             #        else:
             #            input_df[col] = 'Unknown'
-            Y = processed_input.copy()
-            X = scaler.transform(Y)
+
         else:
-            X = None
+            processed_input = None
 
 
         #X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
@@ -1711,8 +1698,17 @@ def page_live_predictor(df, model_data):
                 model_display = selected_model_name
             else:
                 # Scikit-learn normal pipeline
-                prob = float(model.predict_proba(X)[:, 1][0])
-                pred = int(model.predict(X)[0])
+                # Make prediction
+                pred_raw = final_model.predict(processed_input_df)
+                prob_raw = final_model.predict_proba(processed_input_df)[:, 1]
+
+                # Extract scalar values from numpy arrays
+                pred = int(np.asarray(pred_raw).flatten()[0])
+                prob = float(np.asarray(prob_raw).flatten()[0])
+
+                # Clamp probability between 0 and 1
+                prob = max(0.0, min(1.0, prob))
+
                 llm_reason = "Based on machine learning feature importance patterns."
                 llm_retention = "Follow standard operational procedures."
                 model_display = selected_model_name
