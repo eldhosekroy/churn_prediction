@@ -114,10 +114,12 @@ def normalize_reason_label(text):
         return None
     normalized = text.strip().lower()
     mappings = {
-        'Financial issues': ['financial issues', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
+        'Financial issues': ['financial issue', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
         'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
-        'Joined another institution': ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
+        'Joined another institution': ['joined another', 'joined competitor', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
         'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
+        'Already working': ['already working'],
+        'Looking for job': ['looking for job/internship'],
         'Other': ['other', 'unknown', 'unclear']
     }
 
@@ -638,7 +640,7 @@ st.markdown("""
 INPUT_DIR = "./data/"
 OUTPUT_DIR = "./output/"
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_data():
     # Load the processed dataset with inferred churn and reasons
     df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
@@ -681,10 +683,10 @@ def preprocess(df, notes):
     return df, notes
 
 
-@st.cache_resource
+@st.cache_resource(ttl=60)
 def load_model():
     try:
-        with open(os.path.join(OUTPUT_DIR, 'churn_prediction_model.pkl'), 'rb') as f:
+        with open(os.path.join(OUTPUT_DIR, 'prediction_model.pkl'), 'rb') as f:
             model_data = pickle.load(f)
 
             # Add missing keys with defaults (same as before)
@@ -692,8 +694,8 @@ def load_model():
                 model_data['model_name'] = model_data['model'].__class__.__name__
             if 'model_display_name' not in model_data:
                 model_data['model_display_name'] = model_data.get('model_name', 'Unknown Model')
-            if 'best_balance_method' not in model_data:
-                model_data['best_balance_method'] = 'none'
+            if 'balance_method' not in model_data:
+                model_data['balance_method'] = 'none'
 
             return model_data
     except FileNotFoundError:
@@ -964,7 +966,7 @@ def page_overview(df, notes):
     """, unsafe_allow_html=True)
 
     total       = len(df)
-    churned     = (df['churn'] == 1).sum()
+    churned     = (df['Status'] == 'Churned').sum()
     active      = total - churned
     churn_rate  = (churned / total * 100) if total > 0 else 0
     total_notes = len(notes) if notes is not None else 0
@@ -1017,8 +1019,8 @@ def page_overview(df, notes):
     # ── Top Suggested Churn Reasons (from model outputs) ─────────
     if 'Suggested_Churn_Reason' in df.columns:
         try:
-            unique_churn = df[df['churn'] == 1].drop_duplicates(subset=['Contact Id'])
-            mapped_reasons = unique_churn['Suggested_Churn_Reason'].dropna().astype(str).apply(normalize_reason_label)
+            unique_churn = df[df['Status'] == 'Churned'].drop_duplicates(subset=['Contact Id'])
+            mapped_reasons = unique_churn['final_inferred_reason'].dropna().astype(str).apply(normalize_reason_label)
             reasons = mapped_reasons.value_counts().reset_index()
             reasons.columns = ['Reason', 'Count']
 
@@ -1055,8 +1057,8 @@ def page_overview(df, notes):
 
     with col2:
         st.markdown('<div class="section-header"><h2>Churn by Candidate Source</h2></div>', unsafe_allow_html=True)
-        src = df.groupby(['Source of lead', 'churn']).size().reset_index(name='Count')
-        src['Status'] = src['churn'].map({0: 'Active', 1: 'Churned'})
+        src = df.groupby(['Source of lead', 'Status']).size().reset_index(name='Count')
+        src['Status'] = src['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
         fig2 = px.bar(src, x='Source of lead', y='Count', color='Status',
                       color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
@@ -1069,7 +1071,7 @@ def page_overview(df, notes):
 
     with col3:
         st.markdown('<div class="section-header"><h2>By Course</h2></div>', unsafe_allow_html=True)
-        course_churn = df[df['churn'] == 1]['Course'].value_counts().reset_index()
+        course_churn = df[df['Status'] == 'Churned']['Course'].value_counts().reset_index()
         course_churn.columns = ['Course', 'Churned']
         fig3 = px.bar(course_churn, x='Churned', y='Course', orientation='h',
                       color='Churned', color_continuous_scale=['#4c1d95','#f87171'])
@@ -1079,8 +1081,8 @@ def page_overview(df, notes):
 
     with col4:
         st.markdown('<div class="section-header"><h2>Background Split</h2></div>', unsafe_allow_html=True)
-        bg = df.groupby(['background', 'churn']).size().reset_index(name='Count')
-        bg['Status'] = bg['churn'].map({0: 'Active', 1: 'Churned'})
+        bg = df.groupby(['background', 'Status']).size().reset_index(name='Count')
+        bg['Status'] = bg['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
         fig4 = px.pie(bg, names='background', values='Count',
                       color='background', hole=0.5,
                       color_discrete_sequence=PALETTE)
@@ -1089,8 +1091,8 @@ def page_overview(df, notes):
 
     with col5:
         st.markdown('<div class="section-header"><h2>Training Mode</h2></div>', unsafe_allow_html=True)
-        mode_data = df.groupby(['Mode of Program Joined', 'churn']).size().reset_index(name='Count')
-        mode_data['Status'] = mode_data['churn'].map({0: 'Active', 1: 'Churned'})
+        mode_data = df.groupby(['Mode of Program Joined', 'Status']).size().reset_index(name='Count')
+        mode_data['Status'] = mode_data['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
         fig5 = px.bar(mode_data, x='Mode of Program Joined', y='Count', color='Status',
                       color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
                       barmode='stack')
@@ -1101,8 +1103,8 @@ def page_overview(df, notes):
     col6, col7 = st.columns(2)
     with col6:
         st.markdown('<div class="section-header"><h2>Candidate Role vs Churn</h2></div>', unsafe_allow_html=True)
-        ind = df.groupby(['role', 'churn']).size().reset_index(name='Count')
-        ind['Status'] = ind['churn'].map({0: 'Active', 1: 'Churned'})
+        ind = df.groupby(['role', 'Status']).size().reset_index(name='Count')
+        ind['Status'] = ind['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
         fig6 = px.bar(ind, x='role', y='Count', color='Status',
                       color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
@@ -1112,10 +1114,10 @@ def page_overview(df, notes):
 
     with col7:
         st.markdown('<div class="section-header"><h2>Inferred CRM Feedback vs Churn</h2></div>', unsafe_allow_html=True)
-        fb = df.groupby(['final_inferred_reason', 'churn']).size().reset_index(name='Count')
+        fb = df.groupby(['final_inferred_reason', 'Status']).size().reset_index(name='Count')
         # Limit to top 10 reasons to avoid chart clutter
         fb = fb.sort_values('Count', ascending=False).head(20)
-        fb['Status'] = fb['churn'].map({0: 'Active', 1: 'Churned'})
+        fb['Status'] = fb['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
         fig7 = px.bar(fb, x='final_inferred_reason', y='Count', color='Status',
                       color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
@@ -1151,8 +1153,8 @@ def page_candidate_explorer(df, notes):
 
     fdf = df.copy()
 
-    if sel_churn == "Churned": fdf = fdf[fdf['churn'] == 1]
-    elif sel_churn == "Active": fdf = fdf[fdf['churn'] == 0]
+    if sel_churn == "Churned": fdf = fdf[fdf['Status'] == 'Churned']
+    elif sel_churn == "Active": fdf = fdf[fdf['Status'] == 'Joined']
     if sel_source != "All": fdf = fdf[fdf['Source of lead'] == sel_source]
     if sel_course != "All": fdf = fdf[fdf['Course'] == sel_course]
     if sel_mode   != "All": fdf = fdf[fdf['Mode of Program Joined']   == sel_mode]
@@ -1161,12 +1163,12 @@ def page_candidate_explorer(df, notes):
     st.markdown(f"<p style='color:#64748b; font-size:13px;'>Showing <b style='color:#a78bfa'>{len(fdf)}</b> candidates</p>", unsafe_allow_html=True)
 
     # ── Table ─────────────────────────────────────
-    display_cols = ['Contact Id', 'Contact Name', 'Source of lead', 'Course', 'Mode of Program Joined',
-                    'background', 'role', 'Status', 'Invoice', 'churn', 'Suggested_Churn_Reason']
+    display_cols = ['Contact Id', 'Contact Name', 'Education', 'Induction session', 'Feedback',  'Source of lead', 'Course', 'Mode of Program Joined',
+                    'background', 'role', 'Status', 'Invoice', 'final_inferred_reason']
     display_cols = [c for c in display_cols if c in fdf.columns]
 
     tbl = fdf[display_cols].copy()
-    tbl['churn'] = tbl['churn'].map({0: 'Active', 1: 'Churned'})
+    tbl['Status'] = tbl['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
 
     st.dataframe(
         tbl.reset_index(drop=True),
@@ -1178,9 +1180,9 @@ def page_candidate_explorer(df, notes):
             "Source of lead":         st.column_config.TextColumn("Source"),
             "Mode of Program Joined": st.column_config.TextColumn("Mode"),
             "background":             st.column_config.TextColumn("Background"),
-            "churn":                  st.column_config.TextColumn("Churn Status"),
+            "Status":                 st.column_config.TextColumn("Status"),
             "Invoice":                st.column_config.TextColumn("Invoice Status"),
-            "Suggested_Churn_Reason": st.column_config.TextColumn("AI Insight"),
+            "final_inferred_reason":  st.column_config.TextColumn("AI Insight"),
         }
     )
 
@@ -1203,8 +1205,8 @@ def page_candidate_explorer(df, notes):
     if notes is not None and not notes.empty and 'Parent ID.id' in notes.columns:
         cand_notes = notes[notes['Parent ID.id'] == sel_id].copy()
 
-    churn_label = "CHURNED" if row.get('churn', 0) == 1 else "ACTIVE"
-    churn_color = "#f87171" if row.get('churn', 0) == 1 else "#34d399"
+    churn_label = "CHURNED" if row.get('Status', 'Churned') == 'Churned' else "ACTIVE"
+    churn_color = "#f87171" if row.get('Status', 'Churned') == 'Churned' else "#34d399"
 
     # ── Pre-build Notes History card content ───────────────────────
     if not cand_notes.empty:
@@ -1225,8 +1227,8 @@ def page_candidate_explorer(df, notes):
 
     # ── Pre-build AI churn reason + recommendation HTML ────────────
     churn_insights_html = ""
-    if 'Suggested_Churn_Reason' in row.index and pd.notna(row['Suggested_Churn_Reason']) and row['Suggested_Churn_Reason'] != '':
-        reason_data = row['Suggested_Churn_Reason']
+    if 'final_inferred_reason' in row.index and pd.notna(row['final_inferred_reason']) and row['final_inferred_reason'] != '':
+        reason_data = row['final_inferred_reason']
         rec_data = row.get('Recommended_Action', '')
         reason_text = reason_data
         rec_text = rec_data
@@ -1393,8 +1395,8 @@ def page_notes_analysis(df, notes):
     with col2:
         st.markdown('<div class="section-header"><h2>Notes Volume: Active vs Churned Candidates</h2></div>', unsafe_allow_html=True)
         if 'Parent ID.id' in notes.columns and 'Contact Id' in df.columns:
-            merged = df[['Contact Id','churn']].merge(notes, left_on='Contact Id', right_on='Parent ID.id', how='right')
-            merged['Status'] = merged['churn'].map({0:'Active', 1:'Churned'}).fillna('Unknown')
+            merged = df[['Contact Id','Status']].merge(notes, left_on='Contact Id', right_on='Parent ID.id', how='right')
+            merged['Status'] = merged['Status'].map({'Joined':'Active', 'Churned':'Churned'}).fillna('Unknown')
             dur_by_status = merged.groupby('Status').size().reset_index(name='Notes Count')
             fig2 = px.pie(dur_by_status, names='Status', values='Notes Count',
                           color='Status', color_discrete_map={'Active':COLOR_ACTIVE,'Churned':COLOR_CHURN, 'Unknown':'#64748b'}, hole=0.5)
@@ -1495,8 +1497,8 @@ def page_payment_analysis(df):
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown('<div class="section-header"><h2>Churn Distribution by Invoice Status</h2></div>', unsafe_allow_html=True)
-    inv_churn = df_inv.groupby(['Invoice', 'churn']).size().reset_index(name='Count')
-    inv_churn['Status'] = inv_churn['churn'].map({0:'Active', 1:'Churned'})
+    inv_churn = df_inv.groupby(['Invoice', 'Status']).size().reset_index(name='Count')
+    inv_churn['Status'] = inv_churn['Status'].map({'Joined':'Active', 'Churned':'Churned'})
     fig3 = px.bar(inv_churn, x='Invoice', y='Count', color='Status',
                   color_discrete_map={'Active':COLOR_ACTIVE,'Churned':COLOR_CHURN},
                   barmode='group', text='Count')
@@ -1514,28 +1516,20 @@ def page_live_predictor(df, model_data):
         <p>Dynamic AI predictor based on the active model schema. Fill in candidate details to assess risk.</p>
     </div>
     """, unsafe_allow_html=True)
-
     if model_data is None:
         st.error("Could not load churn_prediction_model.pkl")
         return
 
     available_models = model_data.get('available_models', {})
-
-    # Check for dict specifically
     if not isinstance(available_models, dict) or (hasattr(available_models, 'empty') and available_models.empty):
         available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
 
-    #if not available_models:
-    #    # Fallback to single model if available_models is missing (older model format)
-    #    available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
-    
     # Model Selection UI
     st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
-    
     llm_options = ["Gemini 2.5 Flash", "Groq (Llama 3)", "Hugging Face (Mistral)"]
     ml_options = list(available_models.keys())
     all_options = llm_options + ml_options
-    
+
     col_ai, _ = st.columns([1, 2])
     with col_ai:
         selected_model_name = st.selectbox(
@@ -1543,175 +1537,194 @@ def page_live_predictor(df, model_data):
             options=all_options,
             help="Choose which trained algorithm or AI to use for the prediction."
         )
-    
+
     is_llm = selected_model_name in llm_options
+
     if not is_llm:
         model = available_models[selected_model_name]
+
+    # Extract model artifacts from model_data
     final_model = model_data.get('model')
     feature_columns = model_data.get('feature_columns', [])
     preprocessor = model_data.get('preprocessor', {})
     categorical_features = model_data.get('categorical_features', [])
-    numerical_features  = model_data.get('numerical_features', [])
-    label_encoders  = model_data.get('label_encoders', {})
-    scaler          = model_data.get('scaler', None)
-    balance_method = model_data.get('best_balance_method', 'none')
+    numerical_features = model_data.get('numerical_features', [])
+    balance_method = model_data.get('balance_method', 'none')
 
     st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
     st.markdown(
         f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
 
-    df = df[df['churn'].isin([0, 1])].copy()
+    # Filter for valid Status values
+    df = df[df['Status'].isin(['Churned', 'Joined'])].copy()
 
+    # Row 1: Core categorical features
     col1, col2, col3 = st.columns(3)
     with col1:
-        gender = st.selectbox("Gender", sorted(df['Gender'].unique()), key="p_gender")
-        source = st.selectbox("Source of lead", sorted(df['Source of lead'].unique()), key="p_source")
-        education = st.selectbox("Course", sorted(df['Course'].unique()), key="p_edu")
-        semester = st.number_input("Semester", 0, 10, 3, key="p_sem")
-        background = st.selectbox("background", sorted(df['background'].unique()), key="p_bg")
-
+        gender = st.selectbox("Gender", sorted(df['Gender'].dropna().unique()), key="p_gender")
+        course = st.selectbox("Course", sorted(df['Course'].dropna().unique()), key="p_course")
+        source = st.selectbox("Source of lead", sorted(df['Source of lead'].dropna().unique()), key="p_source")
     with col2:
-        stream = st.selectbox("Program_Name", sorted(df['Program_Name'].unique()), key="p_stream")
-        role = st.selectbox("role", sorted(df['role'].unique()), key="p_role")
-        mode = st.selectbox("Mode of Program Joined", sorted(df['Mode of Program Joined'].unique()), key="p_mode")
-        track_interested = st.selectbox("Track Interested", sorted(df['Track Interested'].unique()), key="p_track")
-
+        stream = st.selectbox("Stream", sorted(df['Stream'].dropna().unique()), key="p_stream")
+        track_interested = st.selectbox("Track Interested", sorted(df['Track Interested'].dropna().unique()),
+                                        key="p_track")
+        mode = st.selectbox("Mode of Program Joined", sorted(df['Mode of Program Joined'].dropna().unique()),
+                            key="p_mode")
     with col3:
-        status = st.selectbox("final_inferred_status", sorted(df['final_inferred_status'].unique()), key="p_cs")
-        experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
+        education = st.selectbox("Education", sorted(df['Education'].dropna().unique()), key="p_edu")
+        batch_assigned = st.selectbox("Batch Assigned", sorted(df['Batch Assigned'].dropna().unique()), key="p_ba")
+        role = st.selectbox("Role", sorted(df['role'].dropna().unique()), key="p_role")
+
+    # Row 2: Additional categorical features
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        city = st.selectbox("City", sorted(df['City'].dropna().unique()), key="p_city")
+        mailing_state = st.selectbox("Mailing State", sorted(df['Mailing State'].dropna().unique()), key="p_state")
+        mailing_country = st.selectbox("Mailing Country", sorted(df['Mailing Country'].dropna().unique()),
+                                       key="p_country")
+    with col2:
+        background = st.selectbox("Background", sorted(df['background'].dropna().unique()), key="p_bg")
+        invoice = st.selectbox("Invoice", sorted(df['Invoice'].dropna().unique()), key="p_invoice")
+        program_location = st.selectbox("Program Location", sorted(df['Program Location'].dropna().unique()),
+                                        key="p_loc")
+    with col3:
+        induction_session = st.selectbox("Induction Session", sorted(df['Induction session'].dropna().unique()),
+                                         key="p_ind")
+        feedback = st.selectbox("Feedback", sorted(df['Feedback'].dropna().unique()), key="p_fb")
+        payment_mode = st.selectbox("Payment Mode", sorted(df['Payment_mode'].dropna().unique()), key="p_pm")
+
+    # Row 3: Numerical features
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        semester = st.number_input("Semester", 0, 10, 3, key="p_sem")
         year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
-                                             value=2024)
-        batch_assigned_to = st.selectbox("Batch Assigned to",sorted(df['Batch Assigned to'].unique()), key="p_ba")
+                                             value=2024, key="p_yog")
+        experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
+    with col2:
+        total_amount = st.number_input("Total Amount", min_value=0, value=0, key="p_ta")
+        paid_amount = st.number_input("Paid Amount", min_value=0, value=0, key="p_pa")
+        paid_rate = st.number_input("Paid Rate (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=0.0, step=0.1,
+                                    key="p_pr")
+    with col3:
+        test_taken = st.selectbox("Test", sorted(df['Test'].dropna().unique()), key="p_tt")
+        followup_email = st.selectbox("Followup Email", sorted(df['Followup Email'].dropna().unique()), key="p_fe")
 
     st.markdown('<div class="section-header"><h2>Call Inputs</h2></div>', unsafe_allow_html=True)
 
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
-        test_taken = st.checkbox("Attended an assessment", value=True, key="p_tt")
-    with sc2:
-        followup_email_sent = st.checkbox("Followup after call", value=False, key="p_fe")
-    with sc3:
-        invoice_generated = st.checkbox("Payment Done", value=False, key="p_ig")
-
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1:
-        not_interested = st.checkbox("No Interest in Course", value=True, key="p_ni")
+        not_interested = st.checkbox("No Interest in Course", value=False, key="p_ni")
     with sc2:
         unreachable_not_connected = st.checkbox("No Response / Unreachable", value=False, key="p_ur")
     with sc3:
         joined_competitor = st.checkbox("Joined in another institution", value=False, key="p_jc")
-    with sc4:
-        financial_issue = st.checkbox("Course fees not affordable", value=True, key="p_fs")
 
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1:
-        already_working = st.checkbox("Got placed", value=True, key="p_aw")
+        financial_issue = st.checkbox("Course fees not affordable", value=False, key="p_fs")
     with sc2:
+        already_working = st.checkbox("Got placed", value=False, key="p_aw")
+    with sc3:
         looking_for_job = st.checkbox("Job hunting, not internship", value=False, key="p_lj")
     with sc4:
-        no_notes_provided = st.checkbox("No notes after call", value=False, key="p_nn")
-    with sc3:
-        decision_pending = st.checkbox("Technical Discussion", value=True, key="p_dp")
+        decision_pending = st.checkbox("Technical Discussion", value=False, key="p_dp")
 
-    # Free-text call remarks and optional transcript for live inference
-    call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000,
-                                placeholder="Enter recent call remarks or notes...", key="p_remarks")
-    call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000,
-                                   placeholder="Paste full call transcript to improve AI churn reason extraction.",
-                                   key="p_transcript")
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000,
+                                    placeholder="Enter recent call remarks or notes...", key="p_remarks")
+    with sc2:
+        call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000,
+                                       placeholder="Paste full call transcript to improve AI churn reason extraction.",
+                                       key="p_transcript")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
-
-
-        input_data = {'Experience': experience,
+        # Build input data matching new model features
+        input_data = {
+            # Numerical features
             'Semester': semester,
             'Year of Graduation': year_of_graduation,
-            'Test': int(test_taken),
-            'Followup Email': int(followup_email_sent),
-
+            'Experience': experience,
+            'Total_Amount': total_amount,
+            'Paid_amount': paid_amount,
+            'Paid_Rate': paid_rate,
             # Categorical features
-            'Source of lead': source,
-            'Course': education,
-            'background': background, # Placeholder, ideally derived dynamically from course
-            'role': role,# Placeholder, ideally derived dynamically from experience/semester/grad_year
-            #'Program_Name': stream,
+            'Course': course,
             'Track Interested': track_interested,
+            'City': city,
+            'Mailing State': mailing_state,
+            'Mailing Country': mailing_country,
+            'Source of lead': source,
+            'Gender': gender,
+            'Test': test_taken,
+            'Followup Email': followup_email,
+            'Invoice': invoice,
             'Mode of Program Joined': mode,
-            'Gender': gender
+            'Program Location': program_location,
+            'Education': education,
+            'Batch Assigned': batch_assigned,
+            'role': role,
+            'background': background,
+            'Stream': stream,
+            'Induction session': induction_session,
+            'Feedback': feedback,
+            'Payment_mode': payment_mode,
         }
 
         if not is_llm:
+
             input_df = pd.DataFrame([input_data])
 
-            # The `preprocessor` expects a DataFrame with the original feature names.
-            # `input_df` contains these. `feature_columns` from the saved model refer to the columns *after* preprocessing.
+
+            # Ensure all categorical columns are string type for the preprocessor
+            for col in categorical_features:
+                if col in input_df.columns:
+                    input_df[col] = input_df[col].astype(str)
+
+            # Apply the preprocessor (same one used during training)
             processed_input = preprocessor.transform(input_df)
 
-            # Convert to DataFrame with correct column names for the model if needed
-            processed_input_df = pd.DataFrame(
-                processed_input.toarray() if hasattr(processed_input, 'toarray') else processed_input,
-                columns=feature_columns)
+            # Convert sparse matrix to dense if needed
+            if hasattr(processed_input, 'toarray'):
+                processed_input_df = pd.DataFrame(processed_input.toarray(), columns=feature_columns)
+            else:
+                processed_input_df = pd.DataFrame(processed_input, columns=feature_columns)
 
-            # STEP 3: Align with training features - THIS IS CRITICAL
-            # Remove columns that aren't in training
+            # Align with training feature columns
             cols_to_drop = [col for col in processed_input_df.columns if col not in feature_columns]
             if cols_to_drop:
                 processed_input_df = processed_input_df.drop(columns=cols_to_drop)
 
-            # Align columns - add missing columns with 0 and remove extra ones
             for col in feature_columns:
                 if col not in processed_input_df.columns:
                     processed_input_df[col] = 0
 
-            processed_input_df = processed_input_df[feature_columns]  # Ensure order and presence
-
-            # Scale numerical features
-            #processed_input[numerical_feat] = scaler.transform(processed_input[numerical_feat])
-
-            # Add any missing model features with safe defaults
-            #for col in feature_columns:
-            #    if col not in input_df.columns:
-            #        if col in numerical_feat:
-            #            input_df[col] = 0
-            #        else:
-            #            input_df[col] = 'Unknown'
-
+            processed_input_df = processed_input_df[feature_columns]
         else:
             processed_input = None
-
-
-        #X[numerical_feat] = scaler.transform(X[numerical_feat].values.reshape(1, -1))
-                # If scaler fails, we just continue with raw values
 
         try:
             if is_llm:
                 from llm_integration import get_llm_prediction
                 with st.spinner(f"Querying {selected_model_name} AI Strategist..."):
                     llm_result = get_llm_prediction(selected_model_name, input_data)
-                    
                 prob = float(llm_result.get("churn_probability", 50.0)) / 100.0
                 pred = 1 if prob >= 0.5 else 0
                 llm_reason = llm_result.get("reason", "No reason provided by LLM.")
                 llm_retention = llm_result.get("retention_strategy", "No strategy provided.")
                 model_display = selected_model_name
             else:
-                # Scikit-learn normal pipeline
-                # Make prediction
+                # Scikit-learn model prediction
                 pred_raw = final_model.predict(processed_input_df)
                 prob_raw = final_model.predict_proba(processed_input_df)[:, 1]
-
-                # Extract scalar values from numpy arrays
                 pred = int(np.asarray(pred_raw).flatten()[0])
                 prob = float(np.asarray(prob_raw).flatten()[0])
-
-                # Clamp probability between 0 and 1
                 prob = max(0.0, min(1.0, prob))
-
                 llm_reason = "Based on machine learning feature importance patterns."
                 llm_retention = "Follow standard operational procedures."
-                model_display = selected_model_name
+                model_display = model_data.get('model_display_name', selected_model_name)
 
             # Result Display
             r1, r2, r3 = st.columns([1.2, 1.2, 1.6])
@@ -1730,7 +1743,7 @@ def page_live_predictor(df, model_data):
                         <div style="font-size:24px; font-weight:800; color:#34d399; margin-bottom:8px;">LOW CHURN RISK</div>
                         <div class="pred-sub">This candidate is likely to join training</div>
                     </div>""", unsafe_allow_html=True)
-                    
+
             with r2:
                 gauge = go.Figure(go.Indicator(
                     mode="gauge+number",
@@ -1739,24 +1752,23 @@ def page_live_predictor(df, model_data):
                     number={"suffix": "%", "font": {"color": "#e2e8f0", "size": 36}},
                     gauge={
                         "axis": {"range": [0, 100], "tickcolor": "#475569"},
-                        "bar":  {"color": "#f87171" if prob > 0.5 else "#34d399", "thickness": 0.3},
+                        "bar": {"color": "#f87171" if prob > 0.5 else "#34d399", "thickness": 0.3},
                         "bgcolor": "rgba(0,0,0,0)",
                         "steps": [
-                            {"range": [0, 30],   "color": "rgba(52,211,153,0.15)"},
-                            {"range": [30, 60],  "color": "rgba(251,191,36,0.15)"},
+                            {"range": [0, 30], "color": "rgba(52,211,153,0.15)"},
+                            {"range": [30, 60], "color": "rgba(251,191,36,0.15)"},
                             {"range": [60, 100], "color": "rgba(239,68,68,0.15)"},
                         ],
                         "threshold": {"value": 50, "line": {"color": "#fff", "width": 2}, "thickness": 0.8}
                     }
                 ))
                 gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(family='Inter', color='#94a3b8'),
-                                     margin=dict(l=20, r=20, t=40, b=20), height=250)
+                                    margin=dict(l=20, r=20, t=40, b=20), height=250)
                 st.plotly_chart(gauge, use_container_width=True)
-                
+
             with r3:
                 risk_level = "High" if prob > 0.6 else ("Medium" if prob > 0.35 else "Low")
                 action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
-                
                 st.markdown(f"""<div class="candidate-card" style="margin-top:0; height:100%; display:flex; flex-direction:column;">
 <div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">AI Strategist Assessment</div>
 <div style="font-size:13px; color:#e2e8f0; margin-bottom:8px;">
@@ -1773,9 +1785,9 @@ def page_live_predictor(df, model_data):
 <div style="font-size:12px;">{action_req}</div>
 </div>
 </div>""", unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"Prediction failed: {e}\\n\\nPlease ensure all required inputs are provided.")
 
+        except Exception as e:
+            st.error(f"Prediction failed: {e}\n\nPlease ensure all required inputs are provided.")
 # ─────────────────────────────────────────────# ─────────────────────────────────────────────
 # PAGE 6 — MODEL PERFORMANCE
 # ─────────────────────────────────────────────
@@ -1878,17 +1890,17 @@ def page_model_performance(df, model_data):
         '<div class="section-header"><h2><i class="fa-solid fa-clipboard-list"></i> Why Are Candidates Churning? — Reason Analysis</h2></div>',
         unsafe_allow_html=True)
 
-    churned_df = df[df['churn'] == 1].copy()
-    active_df = df[df['churn'] == 0].copy()
+    churned_df = df[df['Status'] == 'Churned'].copy()
+    active_df = df[df['Status'] == 'Joined'].copy()
 
     r1, r2, r3, r4 = st.columns(4)
 
     with r1:
         st.markdown("""<div class="candidate-card">
-                           <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> No notes</div>""",
+                           <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> Not interested</div>""",
                     unsafe_allow_html=True)
         # Filter for 'not interested' only
-        no_interest_mask = churned_df['final_inferred_reason'].str.lower().str.contains('no notes provided', na=False)
+        no_interest_mask = churned_df['final_inferred_reason'].str.lower().str.contains('other/unspecified', na=False)
         no_interest_df = churned_df[no_interest_mask]
         count = len(no_interest_df)
         pct = count / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -2221,9 +2233,9 @@ def page_model_performance(df, model_data):
         
     if os.path.exists(feat_path):
         feat_df = pd.read_csv(feat_path).head(15)
-        st.markdown("### Top 15 Feature Importances")
-        fig = px.bar(feat_df, x='Importance', y='Feature', orientation='h',
-                     color='Importance', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'])
+        st.markdown("### Top 15 Feature Importance ")
+        fig = px.bar(feat_df, x='Feature Importance (Gini/Information Gain)', y='Feature', orientation='h',
+                     color='Feature Importance (Gini/Information Gain)', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'])
         fig.update_layout(yaxis={'categoryorder':'total ascending'})
         fig.update_layout(**theme(height=400, showlegend=False))
         st.plotly_chart(fig, use_container_width=True)
@@ -2324,13 +2336,17 @@ def main():
     # Load data
     with st.spinner("Loading data..."):
         try:
+            # Refresh button
+            if st.button("🔄 Refresh Data"):
+                st.cache_data.clear()
+                st.rerun()
             df, notes = load_data()
-            df, notes = preprocess(df, notes)
+            #df, notes = preprocess(df, notes)
         except Exception as e:
             st.error(f"Could not load data files: {e}")
             st.stop()
 
-    model_path = os.path.join(OUTPUT_DIR, "churn_prediction_model.pkl")
+    model_path = os.path.join(OUTPUT_DIR, "prediction_model.pkl")
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model()
 
