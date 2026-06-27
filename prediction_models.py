@@ -13,8 +13,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 from dateutil.relativedelta import relativedelta
+
 
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
@@ -37,6 +39,24 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 
 from xgboost import XGBClassifier
+
+from supabase import create_client, Client
+
+load_dotenv(override=True)
+
+url: str = os.environ.get("SUPABASE_URL", "")
+key: str = os.environ.get("SUPABASE_KEY", "")
+
+# 1. INITIALIZE SUPABASE ROUTINES
+
+def init_supabase() -> Client:
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        return None
+    return create_client(url, key)
+
+supabase = init_supabase()
 
 """### **Directory Management**"""
 
@@ -3243,6 +3263,69 @@ model_data = {
     'class_distribution_train': y_train_fit.value_counts().to_dict(),
     'class_distribution_test': y_test.value_counts().to_dict()
 }
+
+try:
+    print("\n📡 Connecting to Supabase to update model registries...")
+
+    # 2. Extract the exact performance metrics row for your winning model
+    winning_metrics = results_df[results_df['Model'] == model_data['model_name']].iloc[0]
+
+    # 3. Calculate Feature Importance mapping dynamically from the winning model
+    importance_map = {}
+    winning_model_obj = model_data['model']
+    feature_names_list = list(model_data['feature_columns'])
+
+    if winning_model_obj and feature_names_list:
+        if hasattr(winning_model_obj, "feature_importances_"):
+            importances = winning_model_obj.feature_importances_
+            raw_map = dict(zip(feature_names_list, map(float, importances)))
+            importance_map = dict(sorted(raw_map.items(), key=lambda item: item[1], reverse=True))
+        elif hasattr(winning_model_obj, "coef_"):
+            importances = winning_model_obj.coef_[0]
+            raw_map = dict(zip(feature_names_list, map(float, importances)))
+            importance_map = dict(sorted(raw_map.items(), key=lambda item: abs(item[1]), reverse=True))
+
+    # 4. Generate a clean Indian Standard Time (IST) timestamp
+    ist_timestamp = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).isoformat()
+
+    # 5. Automatically format a clean, unique version string based on today's date
+    generated_version = f"v-{datetime.now().strftime('%Y.%m.%d-%H%M')}-{model_data['model_name'].lower().replace(' ', '_')}"
+
+    # 6. Map your script variables straight to your Supabase schema columns
+    db_payload = {
+        "version": generated_version,
+        "algorithm": model_data['model_name'],
+        "description": f"Pipeline update. Selected via best performance F1-Score using: {model_data['balance_method']}.",
+        "model_type": "ml",
+        "accuracy": round(float(winning_metrics['Accuracy']), 4),
+        "precision_score": round(float(winning_metrics['Precision']), 4),
+        "recall_score": round(float(winning_metrics['Recall']), 4),
+        "f1_score": round(float(winning_metrics['F1 Score']), 4),
+        "roc_auc": round(float(winning_metrics['ROC AUC']), 4) if pd.notnull(winning_metrics['ROC AUC']) else None,
+        "log_loss": None,
+        "feature_importance": importance_map if importance_map else None,
+        "features_used": feature_names_list,
+        "features_excluded": [],
+        "feature_engineering_notes": f"Categorical tracking columns: {len(model_data['categorical_features'])}. Numerical tracking columns: {len(model_data['numerical_features'])}.",
+        "training_data_rows": int(model_data['training_data_shape'][0]),
+        "test_data_rows": int(model_data['test_data_shape'][0]),
+        "training_date": ist_timestamp,
+        "balance_method": model_data['balance_method'],
+        "is_active": True,  # Flags this brand new model as the current active deployment
+        "deployed_at": ist_timestamp,
+        "created_by": "ml_pipeline_worker"
+    }
+
+    # Step A: Deactivate previous production models so only your new runner is flagged active
+    supabase.table("model_versions").update({"is_active": False}).eq("is_active", True).execute()
+
+    # Step B: Insert the complete record into your 'public.model_versions' table
+    supabase.table("model_versions").insert(db_payload).execute()
+
+    print(f"🎉 Success! Model version '{generated_version}' metrics logged permanently to Supabase.")
+
+except Exception as db_err:
+    print(f"❌ Failed to push metrics to database directly: {db_err}")
 
 # Save the model_data dictionary to a pickle file
 model_output_path = os.path.join(ARTIFACTS_PATH, 'prediction_model.pkl')

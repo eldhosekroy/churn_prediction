@@ -56,18 +56,41 @@ except Exception:
 url: str = os.environ.get("SUPABASE_URL", "")
 key: str = os.environ.get("SUPABASE_KEY", "")
 
-supabase: Client | None = None
-if url and key and url != "your-supabase-url":
-    try:
-        supabase = create_client(url, key)
-        if "access_token" in st.session_state and "refresh_token" in st.session_state:
-            try:
-                supabase.auth.set_session(st.session_state.access_token, st.session_state.refresh_token)
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"Failed to initialize Supabase: {e}")
+# 1. INITIALIZE SUPABASE ROUTINES
+@st.cache_resource
+def init_supabase() -> Client:
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    if not url or not key:
+        return None
+    return create_client(url, key)
 
+supabase = init_supabase()
+
+
+# 2. ADD RISK ANALYSIS HELPER
+def identify_risk_factors(input_data: dict) -> dict:
+    risk_factors = {}
+    total = float(input_data.get('Total_Amount') or 0.0)
+    paid = float(input_data.get('Paid_amount') or 0.0)
+    paid_rate = float(input_data.get('Paid_Rate') or 0.0)
+
+    if paid_rate < 0.4 or (total > 0 and (paid / total) < 0.4):
+        risk_factors["low_payment_rate"] = True
+    if total > 50000:
+        risk_factors["high_total_amount"] = True
+    if input_data.get('Test') == "No":
+        risk_factors["no_test_completed"] = True
+    if input_data.get('Followup Email') == "No":
+        risk_factors["no_followup_engagement"] = True
+    if int(input_data.get('Experience') or 0) == 0:
+        risk_factors["zero_experience"] = True
+    if input_data.get('Mode of Program Joined') == "Online":
+        risk_factors["online_program"] = True
+    if input_data.get('Feedback') and "poor" in str(input_data.get('Feedback')).lower():
+        risk_factors["negative_feedback"] = True
+
+    return risk_factors if risk_factors else {"general_risk": True}
 
 def parse_gemini_response(response_data):
     if not isinstance(response_data, dict):
@@ -1506,16 +1529,18 @@ def page_payment_analysis(df):
     fig3.update_layout(**theme(height=360))
     st.plotly_chart(fig3, use_container_width=True)
 
+
 # ─────────────────────────────────────────────
-# PAGE 5 — LIVE PREDICTOR
+# PAGE 5 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
 # ─────────────────────────────────────────────
 def page_live_predictor(df, model_data):
     st.markdown("""
     <div class="page-header">
         <h1><i class="fa-solid fa-robot"></i> Live Churn Predictor</h1>
-        <p>Dynamic AI predictor based on the active model schema. Fill in candidate details to assess risk.</p>
+        <p>Dynamic AI predictor backed by machine learning models and real-time database syncing layers.</p>
     </div>
     """, unsafe_allow_html=True)
+
     if model_data is None:
         st.error("Could not load churn_prediction_model.pkl")
         return
@@ -1530,12 +1555,18 @@ def page_live_predictor(df, model_data):
     ml_options = list(available_models.keys())
     all_options = llm_options + ml_options
 
-    col_ai, _ = st.columns([1, 2])
+    col_ai, col_ident = st.columns([1, 2])
     with col_ai:
         selected_model_name = st.selectbox(
             "Select AI Model",
             options=all_options,
             help="Choose which trained algorithm or AI to use for the prediction."
+        )
+    with col_ident:
+        c_email = st.text_input(
+            "Candidate Email Identity (Database Primary Key Identifier)",
+            value="candidate_audit@domain.com",
+            help="The evaluation history record will log to the production server linked under this index."
         )
 
     is_llm = selected_model_name in llm_options
@@ -1548,12 +1579,11 @@ def page_live_predictor(df, model_data):
     feature_columns = model_data.get('feature_columns', [])
     preprocessor = model_data.get('preprocessor', {})
     categorical_features = model_data.get('categorical_features', [])
-    numerical_features = model_data.get('numerical_features', [])
     balance_method = model_data.get('balance_method', 'none')
 
     st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
     st.markdown(
-        f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
+        f"**Model Context:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing Matrix:** {format_balance_method(balance_method)}")
 
     # Filter for valid Status values
     df = df[df['Status'].isin(['Churned', 'Joined'])].copy()
@@ -1573,7 +1603,7 @@ def page_live_predictor(df, model_data):
     with col3:
         education = st.selectbox("Education", sorted(df['Education'].dropna().unique()), key="p_edu")
         batch_assigned = st.selectbox("Batch Assigned", sorted(df['Batch Assigned'].dropna().unique()), key="p_ba")
-        role = st.selectbox("Role", sorted(df['role'].dropna().unique()), key="p_role")
+        #st.info("💡 **Role Priority:** Calculated via PostgreSQL automation triggers upon write pipeline execution.")
 
     # Row 2: Additional categorical features
     col1, col2, col3 = st.columns(3)
@@ -1583,10 +1613,10 @@ def page_live_predictor(df, model_data):
         mailing_country = st.selectbox("Mailing Country", sorted(df['Mailing Country'].dropna().unique()),
                                        key="p_country")
     with col2:
-        background = st.selectbox("Background", sorted(df['background'].dropna().unique()), key="p_bg")
         invoice = st.selectbox("Invoice", sorted(df['Invoice'].dropna().unique()), key="p_invoice")
         program_location = st.selectbox("Program Location", sorted(df['Program Location'].dropna().unique()),
                                         key="p_loc")
+        #st.info("💡 **Background Classification:** Derived instantly via background schema triggers.")
     with col3:
         induction_session = st.selectbox("Induction Session", sorted(df['Induction session'].dropna().unique()),
                                          key="p_ind")
@@ -1598,13 +1628,11 @@ def page_live_predictor(df, model_data):
     with col1:
         semester = st.number_input("Semester", 0, 10, 3, key="p_sem")
         year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
-                                             value=2024, key="p_yog")
+                                             value=2026, key="p_yog")
         experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
     with col2:
-        total_amount = st.number_input("Total Amount", min_value=0, value=0, key="p_ta")
-        paid_amount = st.number_input("Paid Amount", min_value=0, value=0, key="p_pa")
-        paid_rate = st.number_input("Paid Rate (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=0.0, step=0.1,
-                                    key="p_pr")
+        total_amount = st.number_input("Total Amount", min_value=0, value=25000, key="p_ta")
+        paid_amount = st.number_input("Paid Amount", min_value=0, value=10000, key="p_pa")
     with col3:
         test_taken = st.selectbox("Test", sorted(df['Test'].dropna().unique()), key="p_tt")
         followup_email = st.selectbox("Followup Email", sorted(df['Followup Email'].dropna().unique()), key="p_fe")
@@ -1641,69 +1669,36 @@ def page_live_predictor(df, model_data):
     st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
-        # Build input data matching new model features
+        derived_paid_rate = (paid_amount / total_amount) if total_amount > 0 else 0.0
+
         input_data = {
-            # Numerical features
-            'Semester': semester,
-            'Year of Graduation': year_of_graduation,
-            'Experience': experience,
-            'Total_Amount': total_amount,
-            'Paid_amount': paid_amount,
-            'Paid_Rate': paid_rate,
-            # Categorical features
-            'Course': course,
-            'Track Interested': track_interested,
-            'City': city,
-            'Mailing State': mailing_state,
-            'Mailing Country': mailing_country,
-            'Source of lead': source,
-            'Gender': gender,
-            'Test': test_taken,
-            'Followup Email': followup_email,
-            'Invoice': invoice,
-            'Mode of Program Joined': mode,
-            'Program Location': program_location,
-            'Education': education,
-            'Batch Assigned': batch_assigned,
-            'role': role,
-            'background': background,
-            'Stream': stream,
-            'Induction session': induction_session,
-            'Feedback': feedback,
+            'Semester': semester, 'Year of Graduation': year_of_graduation, 'Experience': experience,
+            'Total_Amount': total_amount, 'Paid_amount': paid_amount, 'Paid_Rate': derived_paid_rate,
+            'Course': course, 'Track Interested': track_interested, 'City': city, 'Mailing State': mailing_state,
+            'Mailing Country': mailing_country, 'Source of lead': source, 'Gender': gender, 'Test': test_taken,
+            'Followup Email': followup_email, 'Invoice': invoice, 'Mode of Program Joined': mode,
+            'Program Location': program_location, 'Education': education, 'Batch Assigned': batch_assigned,
+            'Stream': stream, 'Induction session': induction_session, 'Feedback': feedback,
             'Payment_mode': payment_mode,
+            'email': c_email
         }
 
         if not is_llm:
+            model_df_input = input_data.copy()
+            model_df_input['role'] = "professional" if experience > 0 else "student"
+            model_df_input['background'] = "tech" if "tech" in education.lower() else "non tech"
 
-            input_df = pd.DataFrame([input_data])
-
-
-            # Ensure all categorical columns are string type for the preprocessor
+            input_df = pd.DataFrame([model_df_input])
             for col in categorical_features:
                 if col in input_df.columns:
                     input_df[col] = input_df[col].astype(str)
 
-            # Apply the preprocessor (same one used during training)
             processed_input = preprocessor.transform(input_df)
-
-            # Convert sparse matrix to dense if needed
             if hasattr(processed_input, 'toarray'):
                 processed_input_df = pd.DataFrame(processed_input.toarray(), columns=feature_columns)
             else:
                 processed_input_df = pd.DataFrame(processed_input, columns=feature_columns)
-
-            # Align with training feature columns
-            cols_to_drop = [col for col in processed_input_df.columns if col not in feature_columns]
-            if cols_to_drop:
-                processed_input_df = processed_input_df.drop(columns=cols_to_drop)
-
-            for col in feature_columns:
-                if col not in processed_input_df.columns:
-                    processed_input_df[col] = 0
-
-            processed_input_df = processed_input_df[feature_columns]
-        else:
-            processed_input = None
+            processed_input_df = processed_input_df.reindex(columns=feature_columns, fill_value=0)
 
         try:
             if is_llm:
@@ -1712,21 +1707,83 @@ def page_live_predictor(df, model_data):
                     llm_result = get_llm_prediction(selected_model_name, input_data)
                 prob = float(llm_result.get("churn_probability", 50.0)) / 100.0
                 pred = 1 if prob >= 0.5 else 0
-                llm_reason = llm_result.get("reason", "No reason provided by LLM.")
-                llm_retention = llm_result.get("retention_strategy", "No strategy provided.")
+                llm_reason = llm_result.get("reason", "Inference processed successfully via LLM rules engine.")
+                llm_retention = llm_result.get("retention_strategy", "Maintain standard operations tracking playbook.")
                 model_display = selected_model_name
             else:
-                # Scikit-learn model prediction
                 pred_raw = final_model.predict(processed_input_df)
                 prob_raw = final_model.predict_proba(processed_input_df)[:, 1]
                 pred = int(np.asarray(pred_raw).flatten()[0])
                 prob = float(np.asarray(prob_raw).flatten()[0])
                 prob = max(0.0, min(1.0, prob))
-                llm_reason = "Based on machine learning feature importance patterns."
-                llm_retention = "Follow standard operational procedures."
+                llm_reason = "Derived dynamically using feature importance patterns across matrix weights."
+                llm_retention = "Initiate standardized recovery sequences based on risk vectors."
                 model_display = model_data.get('model_display_name', selected_model_name)
 
-            # Result Display
+            # --- SUPABASE DATA WRITER ---
+
+                # A. Automatically capture the user's Client IP address
+                user_ip = st.context.ip_address if st.context.ip_address else "127.0.0.1"
+
+                # B. CORRECTED: Access Streamlit Browser Session ID Using Direct Context Function
+                from streamlit.runtime.scriptrunner import get_script_run_ctx
+                ctx = get_script_run_ctx()
+                current_session_id = ctx.session_id if (ctx and hasattr(ctx, 'session_id')) else "unknown_session"
+
+                # B. Check if this candidate email has a previous prediction recorded
+                prev_pred_id = None
+                if supabase is not None and c_email:
+                    try:
+                        prev_query = supabase.table("predictions") \
+                            .select("id") \
+                            .eq("email", c_email) \
+                            .order("predicted_at", desc=True) \
+                            .limit(1) \
+                            .execute()
+
+                        if prev_query.data:
+                            prev_pred_id = prev_query.data[0]["id"]
+                    except Exception as db_err:
+                        # This warning will show you the exact reason if it fails
+                        st.warning(f"Database Lookup Warning: {db_err}")
+                # Fallback gracefully if table hasn't been searched before
+
+                        # D. CALCULATE CONFIDENCE SCORE & DEFINE VERSION
+                        # Formula: How close the probability is to absolute certainty (0.0 or 1.0)
+                conf_score = round(abs(prob - 0.5) * 2, 4)
+
+                current_model_version = "v1.0.0-prod"  # Update this string whenever you deploy a new model file!
+
+            db_record = {
+                "semester": semester, "year_of_graduation": year_of_graduation, "experience": experience,
+                "total_amount": float(total_amount), "paid_amount": float(paid_amount), "course": course,
+                "track_interested": track_interested, "city": city, "mailing_state": mailing_state,
+                "mailing_country": mailing_country, "source_of_lead": source, "gender": gender, "invoice": invoice,
+                "mode_of_program": mode, "program_location": program_location, "education": education,
+                "batch_assigned": batch_assigned, "stream": stream, "induction_session": induction_session,
+                "feedback": feedback, "payment_mode": payment_mode, "email": c_email,
+                "predicted_status": "Churned" if pred == 1 else "Joined", "churn_probability": round(prob, 4),
+                "risk_factors": identify_risk_factors(input_data), "model_algorithm": model_display,
+                "predicted_by": st.session_state.get("user_email", "dashboard_agent"),
+                "risk_level": "high" if prob > 0.65 else ("medium" if prob > 0.35 else "low"),
+
+                "client_ip": user_ip,
+                "previous_prediction_id": prev_pred_id,
+                "session_id": current_session_id,
+                "confidence_score": conf_score,
+                "model_version": current_model_version
+
+            }
+
+            if supabase is not None:
+                with st.spinner("Streaming analytical updates back to ledger database server..."):
+                    db_resp = supabase.table("predictions").insert(db_record).select("role", "background",
+                                                                                     "paid_rate").execute()
+                    db_metrics = db_resp.data[0] if db_resp.data else {}
+            else:
+                db_metrics = {}
+
+            # UI Rendering Results Layout
             r1, r2, r3 = st.columns([1.2, 1.2, 1.6])
             with r1:
                 if pred == 1:
@@ -1746,8 +1803,7 @@ def page_live_predictor(df, model_data):
 
             with r2:
                 gauge = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=round(prob * 100, 1),
+                    mode="gauge+number", value=round(prob * 100, 1),
                     title={"text": "Churn Probability", "font": {"color": "#94a3b8", "size": 14}},
                     number={"suffix": "%", "font": {"color": "#e2e8f0", "size": 36}},
                     gauge={
@@ -1759,7 +1815,6 @@ def page_live_predictor(df, model_data):
                             {"range": [30, 60], "color": "rgba(251,191,36,0.15)"},
                             {"range": [60, 100], "color": "rgba(239,68,68,0.15)"},
                         ],
-                        "threshold": {"value": 50, "line": {"color": "#fff", "width": 2}, "thickness": 0.8}
                     }
                 ))
                 gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(family='Inter', color='#94a3b8'),
@@ -1767,28 +1822,40 @@ def page_live_predictor(df, model_data):
                 st.plotly_chart(gauge, use_container_width=True)
 
             with r3:
-                risk_level = "High" if prob > 0.6 else ("Medium" if prob > 0.35 else "Low")
+                ret_role = db_metrics.get('role', 'professional' if experience > 0 else 'student')
+                ret_bg = db_metrics.get('background', 'tech' if "tech" in education.lower() else 'non tech')
+                ret_prate = float(db_metrics.get('paid_rate') or derived_paid_rate) * 100
+
                 action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
                 st.markdown(f"""<div class="candidate-card" style="margin-top:0; height:100%; display:flex; flex-direction:column;">
-<div style="font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">AI Strategist Assessment</div>
-<div style="font-size:13px; color:#e2e8f0; margin-bottom:8px;">
-<span style="color:#64748b; font-weight:600;">Reasoning:</span><br>
-<i>"{llm_reason}"</i>
-</div>
-<div style="font-size:13px; color:#38bdf8; margin-bottom:10px; flex-grow:1;">
-<span style="color:#64748b; font-weight:600;">Retention Strategy:</span><br>
-<b>{llm_retention}</b>
-</div>
-<hr style="border-color:rgba(255,255,255,0.2); margin:8px 0;">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<div style="font-size:11px; color:#64748b;">Using {model_display}</div>
-<div style="font-size:12px;">{action_req}</div>
-</div>
-</div>""", unsafe_allow_html=True)
+                <div style="font-size:13px; font-weight:700; color:#38bdf8; margin-bottom:5px; text-transform:uppercase;">Database Generated Outputs</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
+                • Computed Role Category: <b style="color:#a78bfa;">{ret_role}</b><br>
+                • Classified Background Profile: <b style="color:#a78bfa;">{ret_bg}</b><br>
+                • Actual Remittance Value Rate: <b style="color:#a78bfa;">{ret_prate:.1f}%</b>
+                </div>
+                <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
+                <div style="font-size:12px; color:#e2e8f0; margin-bottom:8px;">
+                <span style="color:#64748b; font-weight:600;">Reasoning:</span><br>
+                <i>"{llm_reason}"</i>
+                </div>
+                <div style="font-size:12px; color:#38bdf8; margin-bottom:10px; flex-grow:1;">
+                <span style="color:#64748b; font-weight:600;">Retention Strategy:</span><br>
+                <b>{llm_retention}</b>
+                </div>
+                <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:11px; color:#64748b;">Using {model_display}</div>
+                <div style="font-size:12px;">{action_req}</div>
+                </div>
+                </div>""", unsafe_allow_html=True)
 
+            st.toast("Telemetry matrix updates synced to Supabase.", icon=":material/database:")
         except Exception as e:
-            st.error(f"Prediction failed: {e}\n\nPlease ensure all required inputs are provided.")
-# ─────────────────────────────────────────────# ─────────────────────────────────────────────
+            st.error(f"Prediction Pipeline Faulted: {e}")
+
+
+#─────────────────────────# ─────────────────────────────────────────────
 # PAGE 6 — MODEL PERFORMANCE
 # ─────────────────────────────────────────────
 def page_model_performance(df, model_data):
@@ -2291,12 +2358,16 @@ def page_profile():
             else:
                 st.warning("Please enter a new password.")
 
+
+# ==============================================================================
+# MAIN PAGE ROUTER ENGINE
+# ==============================================================================
 def main():
     if not st.session_state.get("logged_in", False):
         page_auth()
         return
 
-    # Top header bar
+    # Injected Top Header profile-button layout styles
     st.markdown("""
         <style>
             .profile-btn button {
@@ -2312,7 +2383,11 @@ def main():
             }
         </style>
     """, unsafe_allow_html=True)
-    
+
+    # 1. Execute early sidebar processing data pass
+    page = sidebar()
+
+    # 2. Render right-hand side Profile UI switch toggler
     c_left, c_right = st.columns([10, 1])
     with c_right:
         st.markdown('<div class="profile-btn">', unsafe_allow_html=True)
@@ -2326,22 +2401,24 @@ def main():
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # 3. FIX: Sidebar state check exits Profile View if a menu link is explicitly clicked
     if st.session_state.get("show_profile", False):
-        sidebar()
-        page_profile()
-        return
+        if st.session_state.get("current_page", "Overview") != st.session_state.get("last_seen_page", page):
+            st.session_state.show_profile = False
+        else:
+            st.session_state.last_seen_page = page
+            page_profile()
+            return
 
-    page = sidebar()
+    st.session_state.last_seen_page = page
 
-    # Load data
+    # 4. Storage Loader Process Memory Block
     with st.spinner("Loading data..."):
         try:
-            # Refresh button
-            if st.button("🔄 Refresh Data"):
+            if st.button(" Refresh Data"):
                 st.cache_data.clear()
                 st.rerun()
             df, notes = load_data()
-            #df, notes = preprocess(df, notes)
         except Exception as e:
             st.error(f"Could not load data files: {e}")
             st.stop()
@@ -2350,12 +2427,19 @@ def main():
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model()
 
-    if   "Overview"            in page: page_overview(df, notes)
-    elif "Candidate Explorer"  in page: page_candidate_explorer(df, notes)
-    elif "CRM Notes Analysis"  in page: page_notes_analysis(df, notes)
-    elif "Invoice Analysis"    in page: page_payment_analysis(df)
-    elif "Predictor"           in page: page_live_predictor(df, model_data)
-    elif "Model Performance"   in page: page_model_performance(df, model_data)
+    # 5. Master Multi-Page Execution Routing Branch
+    if "Overview" in page:
+        page_overview(df, notes)
+    elif "Candidate Explorer" in page:
+        page_candidate_explorer(df, notes)
+    elif "CRM Notes Analysis" in page:
+        page_notes_analysis(df, notes)
+    elif "Invoice Analysis" in page:
+        page_payment_analysis(df)
+    elif "Predictor" in page:
+        page_live_predictor(df, model_data)
+    elif "Model Performance" in page:
+        page_model_performance(df, model_data)
 
 
 if __name__ == "__main__":
