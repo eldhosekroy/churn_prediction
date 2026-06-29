@@ -1665,7 +1665,7 @@ def infer_status_and_reason_from_notes(sentences_list):
         'Financial Issue': [
             'fees', 'amount issue', 'money issue', 'expensive', 'cost', 'financial issue', 'fee issue', 'no money', 'low salary', 'salary issue'
         ],
-        'Unreachable/Not Connected': [
+        'join later': [
             'not connected', 'unreachable', 'no network', 'switched off', 'rnr', 'wrong number', 'unanswered', 'no response', 'unresponsive', 'call later', 'not answering',
             'not responding', 'dis call', 'not reachable', 'nc', 'busy', 'call not connected', 'disconnected', 'switch off', 'incoming calls', 'incoming not', 'junk',
             'na', 'invalid', 'rejected', 'not respond', 'out of service', 'wrong number', 'incoming', 'not connecting', 'voice mail', 'voice issue', 'bc', 'wrong no',
@@ -1761,7 +1761,7 @@ def aggregate_inferred_status_reason(df_merged):
             # Collect all specific 'Not Joined' reasons
             not_joined_specific_reasons = [r for r in filtered_reasons if r in [
                 'Joined Competitor', 'Already Working/Internship', 'Looking for Job/Internship (Specific Type)',
-                'Not Interested', 'Financial Issue', 'Unreachable/Not Connected',
+                'Not Interested', 'Financial Issue', 'Join later',
                 'Decision Pending/Discussing', 'Location Issue', 'Time/Schedule Conflict'
             ]]
             if not_joined_specific_reasons:
@@ -1769,13 +1769,13 @@ def aggregate_inferred_status_reason(df_merged):
             else:
                 # If 'Not Joined' status is inferred but no specific reason, check for generic ones.
                 if 'Unspecified Not Joined Reason' in reasons:
-                    final_reason = 'Unspecified Not Joined Reason'
+                    final_reason = 'Not Interested'
                 elif 'Other/Unspecified' in reasons:
                     final_reason = 'Other/Unspecified'
                 elif 'No Notes Provided' in reasons and len(filtered_reasons) == 0:
                     final_reason = 'No Notes Provided'
                 else:
-                    final_reason = 'Unspecified Not Joined Reason'
+                    final_reason = 'Not Interested'
         elif final_status == 'Join Later':
             join_later_specific_reasons = [r for r in filtered_reasons if r == 'Unspecified Join Later Reason'] # 'N/A' is the common reason for 'Join Later' so filtered_reasons is important
             if join_later_specific_reasons:
@@ -1831,6 +1831,8 @@ print(enrolled_df['final_inferred_reason'].value_counts())
 
 """###### Handling 'final inferred reason'"""
 
+enrolled_df.loc[enrolled_df['Program Joined'].str.lower() != 'not joined', 'final_inferred_reason'] = 'N/A'
+
 # Condition 1: If 'final_inferred_reason' is 'No Notes Provided' AND 'Program Joined' is NOT 'Not Joined', change to 'N/A'.
 mask_no_notes_not_joined_program = (
     (enrolled_df['final_inferred_reason'] == 'No Notes Provided') &
@@ -1852,14 +1854,14 @@ if num_updated_specific_reason > 0:
     # Dynamically identify specific 'Not Joined' reasons from the current enrolled_df
     # excluding generic ones ('Other/Unspecified', 'N/A', 'No Notes Provided').
     specific_not_joined_reasons_available = enrolled_df[
-        (enrolled_df['final_inferred_status'] == 'Not Joined') &
+        (enrolled_df['Program Joined'] == 'Not Joined') &
         (~enrolled_df['final_inferred_reason'].isin(['Other/Unspecified', 'N/A', 'No Notes Provided']))
     ]['final_inferred_reason'].unique().tolist()
 
     if not specific_not_joined_reasons_available:
         # Fallback to a predefined list if no specific reasons are found in the data yet
         reasons_to_choose_from = [
-            'Unreachable/Not Connected',
+            'Join later',
             'Decision Pending/Discussing',
             'Looking for Job/Internship (Specific Type)',
             'Joined Competitor',

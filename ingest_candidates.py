@@ -36,7 +36,8 @@ def import_crm_leads_pipeline(file_path: str):
             'City': 'city', 'Mailing State': 'mailing_state', 'Mailing Country': 'mailing_country',
             'Course': 'course', 'Track Interested': 'track_interested', 'Batch Assigned': 'batch_assigned',
             'Mode of Program Joined': 'program_mode', 'Program Location': 'program_location',
-            'Induction Session': 'induction_session', 'Feedback': 'interest_level', 'final_inferred_reason': 'background_override'
+            'Induction session': 'induction_session', 'Feedback': 'interest_level', 'final_inferred_reason': 'background_override',
+            'Contact Owner': 'csv_contact_owner'
         }
         df = df.rename(columns={k: v for k, v in mapping_dict.items() if k in df.columns})
         df = df.dropna(subset=['email', 'candidate_name']).replace({np.nan: None})
@@ -51,7 +52,7 @@ def import_crm_leads_pipeline(file_path: str):
             'candidate_name', 'contact_id', 'email', 'contact_phone', 'gender',
             'education', 'stream', 'background_override', 'city', 'mailing_state',
             'mailing_country', 'course', 'track_interested', 'batch_assigned',
-            'program_mode', 'program_location', 'induction_session', 'interest_level'
+            'program_mode', 'program_location', 'induction_session', 'interest_level','csv_contact_owner'
         ]
         records = df[[c for c in df.columns if c in schema_cols]].to_dict(orient='records')
 

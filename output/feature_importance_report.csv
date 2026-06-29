@@ -1,37 +1,37 @@
 Feature,Feature Importance (Gini/Information Gain),Abs_Value
-cat__Course_Gen AI & Prompt Engineering,0.23666092819579426,0.23666092819579426
-cat__Course_Python,0.20688097445520823,0.20688097445520823
-cat__Course_PEP Program,0.15761255180005124,0.15761255180005124
-num__Total_Amount,0.13878719263053066,0.13878719263053066
-cat__Course_One Month Program,0.07928171483530785,0.07928171483530785
-cat__Batch Assigned_Jan 2024,0.04740180977853311,0.04740180977853311
-num__Paid_amount,0.03811254002830663,0.03811254002830663
-cat__Course_DA & DS Advanced Program,0.03562725149344827,0.03562725149344827
-cat__Mode of Program Joined_Offline,0.03164239739458991,0.03164239739458991
-cat__Source of lead_Infopark Website,0.014732968099068324,0.014732968099068324
-cat__Source of lead_Indeed,0.009208105061917701,0.009208105061917701
-cat__Feedback_Positive,0.004051566227243794,0.004051566227243794
-num__Paid_Rate,0.0,0.0
-cat__Course_Data Science,0.0,0.0
+cat__Course_Gen AI & Prompt Engineering,0.17643278534419218,0.17643278534419218
+cat__Course_One Month Program,0.17418606787689175,0.17418606787689175
+cat__Course_Python,0.16663889851010968,0.16663889851010968
+cat__Course_DA & DS Advanced Program,0.15316220893957638,0.15316220893957638
+cat__Course_PEP Program,0.11526724164792557,0.11526724164792557
+cat__Course_Rounded DS & GenAI Professional,0.09689061392878069,0.09689061392878069
+cat__Program Location_Kochi,0.07691777856845415,0.07691777856845415
+cat__Course_MERN Stack,0.011009492052923446,0.011009492052923446
+cat__Source of lead_Referral,0.010127368016085901,0.010127368016085901
+cat__Feedback_Not Attended,0.00979257899076076,0.00979257899076076
+cat__Batch Assigned_Apr 2024,0.009574966124299412,0.009574966124299412
+num__Total_Amount,0.0,0.0
 cat__Course_Data Analytics,0.0,0.0
+num__Paid_Rate,0.0,0.0
+num__Paid_amount,0.0,0.0
 num__Semester,0.0,0.0
-num__Experience,0.0,0.0
-cat__Track Interested_Data Science,0.0,0.0
 cat__Track Interested_Data Analytics,0.0,0.0
-cat__Course_Rounded DS & GenAI Professional,0.0,0.0
-cat__Course_MERN Stack,0.0,0.0
+cat__Course_Data Science,0.0,0.0
+num__Experience,0.0,0.0
 num__Year of Graduation,0.0,0.0
-cat__Track Interested_Gen AI & Prompt Engineering,0.0,0.0
+cat__Track Interested_Not Mentioned,0.0,0.0
 cat__Track Interested_PEP Program,0.0,0.0
+cat__Track Interested_Data Science,0.0,0.0
 cat__Track Interested_Full Stack,0.0,0.0
+cat__City_Bengaluru,0.0,0.0
 cat__City_Calicut,0.0,0.0
 cat__City_Chennai,0.0,0.0
 cat__City_Ernakulam,0.0,0.0
 cat__City_Idukki,0.0,0.0
 cat__City_Kannur,0.0,0.0
-cat__Track Interested_Python Programming,0.0,0.0
+cat__Track Interested_Gen AI & Prompt Engineering,0.0,0.0
 cat__Track Interested_MERN Stack,0.0,0.0
-cat__Track Interested_Not Mentioned,0.0,0.0
+cat__City_Kottayam,0.0,0.0
 cat__City_Malappuram,0.0,0.0
 cat__City_Palakkad,0.0,0.0
 cat__City_Pathanamthitta,0.0,0.0
@@ -45,73 +45,72 @@ cat__Mailing State_Other State,0.0,0.0
 cat__Mailing State_Tamil Nadu,0.0,0.0
 cat__Mailing Country_India,0.0,0.0
 cat__Source of lead_Bulk Lead,0.0,0.0
-cat__City_Kasargod,0.0,0.0
+cat__Track Interested_Python Programming,0.0,0.0
 cat__City_Alappuzha,0.0,0.0
-cat__City_Bengaluru,0.0,0.0
-cat__Source of lead_Free Internship Campaign,0.0,0.0
 cat__Source of lead_Digital Marketing,0.0,0.0
 cat__Source of lead_Carryover,0.0,0.0
-cat__Source of lead_IV,0.0,0.0
+cat__Source of lead_Indeed,0.0,0.0
+cat__Source of lead_Free Internship Campaign,0.0,0.0
+cat__Source of lead_Job Fair,0.0,0.0
 cat__Source of lead_LinkedIn,0.0,0.0
 cat__Source of lead_Naukri,0.0,0.0
+cat__Source of lead_IV,0.0,0.0
 cat__Source of lead_OLX,0.0,0.0
-cat__Source of lead_Job Fair,0.0,0.0
 cat__Source of lead_SEO,0.0,0.0
 cat__Source of lead_Seminar,0.0,0.0
 cat__Source of lead_Social Media,0.0,0.0
 cat__Source of lead_Webinar,0.0,0.0
 cat__Source of lead_Website,0.0,0.0
 cat__Source of lead_Workshop,0.0,0.0
+cat__Source of lead_Infopark Website,0.0,0.0
 cat__Gender_Female,0.0,0.0
-cat__Source of lead_Referral,0.0,0.0
 cat__Gender_MAle,0.0,0.0
-cat__Gender_Male,0.0,0.0
-cat__Followup Email_False,0.0,0.0
 cat__Test_False,0.0,0.0
+cat__Gender_Male,0.0,0.0
 cat__Followup Email_True,0.0,0.0
 cat__Invoice_Yes,0.0,0.0
 cat__Mode of Program Joined_Hybrid,0.0,0.0
+cat__Followup Email_False,0.0,0.0
+cat__Mode of Program Joined_Offline,0.0,0.0
 cat__Mode of Program Joined_Online,0.0,0.0
-cat__Program Location_Bengaluru,0.0,0.0
 cat__Program Location_Calicut,0.0,0.0
+cat__Program Location_Bengaluru,0.0,0.0
 cat__Program Location_Hyderabad,0.0,0.0
-cat__Program Location_Kochi,0.0,0.0
 cat__Education_B VOC,0.0,0.0
-cat__Education_B VOC-IT,0.0,0.0
+cat__City_Kasargod,0.0,0.0
 cat__City_Kollam,0.0,0.0
-cat__City_Kottayam,0.0,0.0
-cat__Education_BCA,0.0,0.0
 cat__Education_BA,0.0,0.0
-cat__Education_BSC-IT,0.0,0.0
-cat__Education_BCOM,0.0,0.0
+cat__Education_B VOC-IT,0.0,0.0
+cat__Education_BSC,0.0,0.0
+cat__Education_BCA,0.0,0.0
+cat__Education_BTECH,0.0,0.0
 cat__Education_DIPLOMA,0.0,0.0
 cat__Education_DIPLOMA-IT,0.0,0.0
-cat__Education_GRADUATED,0.0,0.0
-cat__Education_BSC,0.0,0.0
+cat__Education_BCOM,0.0,0.0
+cat__Education_MBA,0.0,0.0
 cat__Education_MCA,0.0,0.0
 cat__Education_MCOM,0.0,0.0
 cat__Education_MSC,0.0,0.0
 cat__Education_MSC-IT,0.0,0.0
 cat__Education_MTECH,0.0,0.0
 cat__Education_PLUS TWO,0.0,0.0
+cat__Education_BSC-IT,0.0,0.0
 cat__Education_UNSPECIFIED,0.0,0.0
-cat__Education_BTECH,0.0,0.0
-cat__Batch Assigned_Apr 2024,0.0,0.0
 cat__Batch Assigned_Apr 2025,0.0,0.0
-cat__Batch Assigned_Aug 2026,0.0,0.0
 cat__Batch Assigned_Aug 2025,0.0,0.0
+cat__Batch Assigned_Aug 2026,0.0,0.0
+cat__Batch Assigned_Dec 2024,0.0,0.0
 cat__Batch Assigned_Dec 2025,0.0,0.0
 cat__Batch Assigned_Feb 2024,0.0,0.0
 cat__Batch Assigned_Feb 2025,0.0,0.0
-cat__Batch Assigned_Dec 2024,0.0,0.0
 cat__Batch Assigned_Feb 2026,0.0,0.0
+cat__Batch Assigned_Jan 2024,0.0,0.0
 cat__Batch Assigned_Jan 2025,0.0,0.0
 cat__Batch Assigned_Jan 2026,0.0,0.0
 cat__Batch Assigned_Jul 2024,0.0,0.0
 cat__Batch Assigned_Jul 2025,0.0,0.0
-cat__Batch Assigned_Jul 2026,0.0,0.0
 cat__Batch Assigned_Jun 2024,0.0,0.0
-cat__Education_MBA,0.0,0.0
+cat__Education_GRADUATED,0.0,0.0
 cat__Batch Assigned_Jun 2025,0.0,0.0
 cat__Batch Assigned_Jun 2026,0.0,0.0
 cat__Batch Assigned_Mar 2025,0.0,0.0
@@ -138,9 +137,9 @@ cat__Stream_Training,0.0,0.0
 cat__background_Tech,0.0,0.0
 cat__Induction session_Attended,0.0,0.0
 cat__Induction session_Not Attended,0.0,0.0
-cat__Feedback_Neutral,0.0,0.0
 cat__Feedback_Negative,0.0,0.0
-cat__Feedback_Not Attended,0.0,0.0
+cat__Feedback_Neutral,0.0,0.0
+cat__Feedback_Positive,0.0,0.0
 cat__Payment_mode_Cash,0.0,0.0
 cat__Payment_mode_Check,0.0,0.0
 cat__Payment_mode_UPI,0.0,0.0

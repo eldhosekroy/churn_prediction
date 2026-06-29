@@ -1045,7 +1045,7 @@ def page_overview(df, notes):
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Top Suggested Churn Reasons (from model outputs) ─────────
-    if 'Suggested_Churn_Reason' in df.columns:
+    if 'final_inferred_reason' in df.columns:
         try:
             unique_churn = df[df['Status'] == 'Churned'].drop_duplicates(subset=['Contact Id'])
             mapped_reasons = unique_churn['final_inferred_reason'].dropna().astype(str).apply(normalize_reason_label)
@@ -1086,9 +1086,9 @@ def page_overview(df, notes):
     with col2:
         st.markdown('<div class="section-header"><h2>Churn by Candidate Source</h2></div>', unsafe_allow_html=True)
         src = df.groupby(['Source of lead', 'Status']).size().reset_index(name='Count')
-        src['Status'] = src['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
+        src['Status'] = src['Status'].map({'Churned': 'Churned'})
         fig2 = px.bar(src, x='Source of lead', y='Count', color='Status',
-                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      color_discrete_map={'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
         fig2.update_traces(textfont_size=11, textposition='outside')
         fig2.update_layout(**theme(height=310, showlegend=True))
@@ -1110,7 +1110,7 @@ def page_overview(df, notes):
     with col4:
         st.markdown('<div class="section-header"><h2>Background Split</h2></div>', unsafe_allow_html=True)
         bg = df.groupby(['background', 'Status']).size().reset_index(name='Count')
-        bg['Status'] = bg['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
+        bg['Status'] = bg['Status'].map({'Churned': 'Churned'})
         fig4 = px.pie(bg, names='background', values='Count',
                       color='background', hole=0.5,
                       color_discrete_sequence=PALETTE)
@@ -1120,9 +1120,9 @@ def page_overview(df, notes):
     with col5:
         st.markdown('<div class="section-header"><h2>Training Mode</h2></div>', unsafe_allow_html=True)
         mode_data = df.groupby(['Mode of Program Joined', 'Status']).size().reset_index(name='Count')
-        mode_data['Status'] = mode_data['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
+        mode_data['Status'] = mode_data['Status'].map({'Churned': 'Churned'})
         fig5 = px.bar(mode_data, x='Mode of Program Joined', y='Count', color='Status',
-                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      color_discrete_map={'Churned': COLOR_CHURN},
                       barmode='stack')
         fig5.update_layout(**theme(height=280))
         st.plotly_chart(fig5, use_container_width=True)
@@ -1132,22 +1132,22 @@ def page_overview(df, notes):
     with col6:
         st.markdown('<div class="section-header"><h2>Candidate Role vs Churn</h2></div>', unsafe_allow_html=True)
         ind = df.groupby(['role', 'Status']).size().reset_index(name='Count')
-        ind['Status'] = ind['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
+        ind['Status'] = ind['Status'].map({'Churned': 'Churned'})
         fig6 = px.bar(ind, x='role', y='Count', color='Status',
-                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+                      color_discrete_map={'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
         fig6.update_traces(textfont_size=11, textposition='outside')
         fig6.update_layout(**theme(height=290))
         st.plotly_chart(fig6, use_container_width=True)
 
     with col7:
-        st.markdown('<div class="section-header"><h2>Inferred CRM Feedback vs Churn</h2></div>', unsafe_allow_html=True)
-        fb = df.groupby(['final_inferred_reason', 'Status']).size().reset_index(name='Count')
+        st.markdown('<div class="section-header"><h2>Induction Session Attended vs Churn</h2></div>', unsafe_allow_html=True)
+        fb = df.groupby(['Induction session', 'Status']).size().reset_index(name='Count')
         # Limit to top 10 reasons to avoid chart clutter
         fb = fb.sort_values('Count', ascending=False).head(20)
         fb['Status'] = fb['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
-        fig7 = px.bar(fb, x='final_inferred_reason', y='Count', color='Status',
-                      color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
+        fig7 = px.bar(fb, x='Induction session', y='Count', color='Status',
+                      color_discrete_map={'Avtive': COLOR_ACTIVE,'Churned': COLOR_CHURN},
                       barmode='group', text='Count')
         fig7.update_traces(textfont_size=11, textposition='outside')
         fig7.update_layout(**theme(height=290))
@@ -1766,10 +1766,10 @@ def page_payment_analysis(df):
     df_inv['Invoice'] = df_inv['Invoice'].fillna('No Invoice').astype(str).str.title().str.strip()
     
     total_cands = len(df_inv)
-    paid_count  = len(df_inv[df_inv['Invoice'] == 'Paid'])
-    sent_count  = len(df_inv[df_inv['Invoice'] == 'Sent'])
+    paid_count  = df_inv['Paid_amount'].sum()
+    sent_count  = df_inv['Total_Amount'].sum()
     no_inv      = len(df_inv[df_inv['Invoice'].isin(['No', 'No Invoice', 'Nan'])])
-    paid_rate   = paid_count / total_cands * 100 if total_cands > 0 else 0
+    paid_rate   = paid_count / sent_count * 100 if sent_count > 0 else 0
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -1784,9 +1784,9 @@ def page_payment_analysis(df):
             <div class="kpi-sub">{paid_rate:.1f}% paid rate</div></div>""", unsafe_allow_html=True)
     with k3:
         st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-paper-plane" style="color:#fbbf24"></i></div>
-            <div class="kpi-title">Sent (Pending)</div>
+            <div class="kpi-title">Total Amount</div>
             <div class="kpi-value" style="color:#fbbf24; font-size:26px;">{sent_count}</div>
-            <div class="kpi-sub">Awaiting payment</div></div>""", unsafe_allow_html=True)
+            <div class="kpi-sub">Expected payment</div></div>""", unsafe_allow_html=True)
     with k4:
         st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-ban" style="color:#f87171"></i></div>
             <div class="kpi-title">No Invoice</div>
@@ -2256,7 +2256,7 @@ def page_model_performance(df, model_data):
                            <div style="font-size:13px; font-weight:700; color:#f87171; margin-bottom:12px;"><i class="fa-solid fa-circle-xmark"></i> Not interested</div>""",
                     unsafe_allow_html=True)
         # Filter for 'not interested' only
-        no_interest_mask = churned_df['final_inferred_reason'].str.lower().str.contains('other/unspecified', na=False)
+        no_interest_mask = churned_df['final_inferred_reason'].str.lower().str.contains('not interested', na=False)
         no_interest_df = churned_df[no_interest_mask]
         count = len(no_interest_df)
         pct = count / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -2271,7 +2271,7 @@ def page_model_performance(df, model_data):
                            <div style="font-size:13px; font-weight:700; color:#fbbf24; margin-bottom:12px;"><i class="fa-solid fa-phone-slash"></i> No Response Pattern</div>""",
                     unsafe_allow_html=True)
         # Filter for 'not interested' only
-        no_resp_mask = churned_df['final_inferred_reason'].str.lower().str.contains('unreachable/not connected', na=False)
+        no_resp_mask = churned_df['final_inferred_reason'].str.lower().str.contains('other', na=False)
         no_resp_df = churned_df[no_resp_mask]
         no_resp = len(no_resp_df)
         pct2 = no_resp / len(churned_df) * 100 if len(churned_df) > 0 else 0
@@ -2651,9 +2651,7 @@ def page_profile():
 # ==============================================================================
 # MAIN PAGE ROUTER ENGINE
 # ==============================================================================
-# ==============================================================================
-# MAIN PAGE ROUTER ENGINE (FULLY UPDATED)
-# ==============================================================================
+
 def main():
     if not st.session_state.get("logged_in", False):
         page_auth()
