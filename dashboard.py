@@ -18,6 +18,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from dotenv import load_dotenv
+from database_pipeline import log_crm_call_interaction
+from datetime import datetime
 
 import google.generativeai as genai
 from google.ai import generativelanguage_v1beta as gal
@@ -91,6 +93,8 @@ def identify_risk_factors(input_data: dict) -> dict:
         risk_factors["negative_feedback"] = True
 
     return risk_factors if risk_factors else {"general_risk": True}
+
+
 
 def parse_gemini_response(response_data):
     if not isinstance(response_data, dict):
@@ -871,7 +875,6 @@ def page_auth():
                     else:
                         st.warning("Please enter email and password.")
 
-
 def sidebar():
     with st.sidebar:
         if svg_logo:
@@ -901,9 +904,12 @@ def sidebar():
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Overview"
 
+        # 1. UPDATED NAVIGATION PAGES ARRAY WITH YOUR NEW DASHBOARDS
         pages = [
             ("Overview", ":material/dashboard:"),
             ("Candidate Explorer", ":material/search:"),
+            ("Smart Agent Workspace", ":material/assignment_turned_in:"), # Added
+            #("360° Candidate Diagnostics", ":material/account_circle:"), # Added
             ("CRM Notes Analysis", ":material/call:"),
             ("Invoice Analysis", ":material/payments:"),
             ("Live Predictor", ":material/online_prediction:"),
@@ -916,7 +922,7 @@ def sidebar():
                 st.session_state.show_profile = False
                 st.rerun()
 
-        # Dynamically inject CSS to highlight the active button by its exact DOM index
+        # 2. DYNAMICALLY HIGHLIGHT ACCORDING TO THE UPDATED ARRAY MAP
         active_idx = [p[0] for p in pages].index(st.session_state.current_page) + 2
         st.markdown(f"""
         <style>
@@ -975,7 +981,6 @@ def sidebar():
             st.rerun()
 
     return page
-
 
 # ─────────────────────────────────────────────
 # PAGE 1 — OVERVIEW
@@ -1353,6 +1358,297 @@ def page_candidate_explorer(df, notes):
 {raw_notes_html}
 </div>""", unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
+# PAGE 3 — Call log
+# ─────────────────────────────────────────────
+
+def render_agent_workspace_and_logger(supabase, owner_uuid):
+    """
+    Renders the custom styled Smart Agent Workspace with KPI matrix summary
+    cards, priority followup task queues, and an integrated interaction logger.
+    """
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-assignment-turned-in"></i> Smart Agent Workspace</h1>
+        <p>Manage prioritized task pipelines, track active customer risk metrics, and log communications.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
+
+    try:
+        rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": owner_uuid}).execute()
+        if rpc_stats.data:
+            s = rpc_stats.data[0]
+
+            # Safely extract with fallbacks to avoid NoneType errors
+            total_leads = s.get("total_candidates") or 0
+            high_risk = s.get("high_risk_count") or 0
+            urgent_reminders = s.get("urgent_followups") or 0
+
+            # FIX: Provide a default fallback string or float before calling float()
+            avg_risk = float(s.get("avg_churn_probability") or 0.0)
+
+            kpi_html = f"""
+            <div style="display:flex; gap:16px; margin-bottom:24px; flex-wrap: wrap;">
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#38bdf8;">{total_leads}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Leads Assigned</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#ef4444;">{high_risk}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">High Risk Churns</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#fbbf24;">{urgent_reminders}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Urgent Actions</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#a78bfa;">{avg_risk:.1%}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Avg Risk Baseline</div>
+                </div>
+            </div>
+            """
+            st.markdown(kpi_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"KPI compilation error: {e}")
+
+    # ── 2. SMART TASK REMINDERS QUEUE ─────────────────────────────────────
+    st.markdown('<div class="section-header"><h2>📋 Prioritized Action Items (7 Days)</h2></div>',
+                unsafe_allow_html=True)
+    try:
+        reminders = supabase.rpc("get_followup_reminders", {"p_owner_id": owner_uuid}).execute()
+        if reminders.data:
+            df_reminders = pd.DataFrame(reminders.data)
+
+            # Formatted column layout summary
+            st.dataframe(
+                df_reminders[[
+                    "next_followup_date", "followup_priority", "candidate_name",
+                    "email", "course", "churn_probability", "interest_level"
+                ]].reset_index(drop=True),
+                use_container_width=True,
+                height=240,
+                column_config={
+                    "next_followup_date": st.column_config.TextColumn("Due Date", width="small"),
+                    "followup_priority": st.column_config.TextColumn("Priority"),
+                    "candidate_name": st.column_config.TextColumn("Student Name"),
+                    "email": st.column_config.TextColumn("Email Address"),
+                    "course": st.column_config.TextColumn("Course"),
+                    "churn_probability": st.column_config.NumberColumn("AI Risk", format="%.1%"),
+                    "interest_level": st.column_config.TextColumn("Interest"),
+                }
+            )
+        else:
+            st.success(" All clear! There are no pending follow-up tasks on your calendar for this week.")
+    except Exception as e:
+        st.info("No active follow-up entries resolved.")
+
+    # ── 3. INTERACTIVE TOUCHPOINT LOGGING FORM ─────────────────────────────
+    st.markdown('<div class="section-header"><h2> Log Live Communication Interaction</h2></div>',
+                unsafe_allow_html=True)
+
+    with st.expander("Open Communication Ingestion Terminal", expanded=True):
+        with st.form("crm_call_log_form", border=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                c_email = st.text_input("Candidate Target Email Reference", placeholder="student@example.com")
+                direction = st.selectbox("Interaction Direction", ["Outbound", "Inbound"])
+                duration_sec = st.number_input("Call Duration Metrics (Seconds)", min_value=0, value=60, step=10)
+                interest = st.selectbox("Inferred Interest Level", ["High", "Medium", "Low"], index=1)
+            with col2:
+                remark_cat = st.selectbox("Classification Category",
+                                          ["General Inquiry", "Batch Allocation Query", "Pricing & Scholarship Options",
+                                           "Technical Support"])
+                outcomes = st.multiselect("Interaction Outcomes",
+                                          ["Answered", "Interested", "Follow-up Scheduled", "Busy / Callback Requested",
+                                           "Not Interested"])
+
+                # Nested layout control settings
+                f_req = st.checkbox("Toggle Future Outreach Flag?", value=False)
+                f_date = st.date_input("Outreach Followup Window Target", min_value=datetime.today())
+                f_pri = st.selectbox("Task Escalation Priority", ["low", "medium", "high", "urgent"], index=1)
+
+            transcript_text = st.text_area("Full Audio Transcript Transcription Matrix / Core Logging Strings",
+                                           placeholder="Paste conversation transcript block details here...")
+            remarks_text = st.text_area("Executive Summary Notes", placeholder="Provide high-level takeaways...")
+
+            st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+            if st.form_submit_button("Commit Log Ingestion", type="primary", use_container_width=True):
+                if not c_email:
+                    st.error("Please specify a target email identity mapping reference.")
+                else:
+                    f_date_str = f_date.strftime("%Y-%m-%d") if f_req else None
+                    success = log_crm_call_interaction(
+                        email=c_email.strip(), duration_sec=int(duration_sec), agent_name="Dashboard Agent",
+                        direction=direction,
+                        transcript_text=transcript_text, remarks_text=remarks_text, remark_cat=remark_cat,
+                        outcomes_list=outcomes,
+                        summary_text=remarks_text[:200] if remarks_text else "No summary provided.", interest=interest,
+                        followup_req=f_req,
+                        next_followup_str=f_date_str, priority=f_pri
+                    )
+                    if success:
+                        st.success("Interaction touchpoint committed directly to transactional registries.")
+                        st.rerun()
+                    else:
+                        st.error("Transaction Aborted: Target student identifier matrix mapping not found.")
+
+# ─────────────────────────────────────────────
+# PAGE 4 — candidate profile
+# ─────────────────────────────────────────────
+
+def render_360_student_analytics_hub(supabase):
+    """
+    Renders a unified 360-degree candidate profile using the database
+    analytical view layout matching your exact template columns.
+    """
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-user-circle"></i> 360° Candidate Diagnostics</h1>
+        <p>Inspect multi-source timelines, evaluation records, and AI risk remediation blueprints.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    lookup_email = st.text_input("Search Candidate Diagnostic Profiles by Email Location",
+                                 placeholder="enter_candidate_email@domain.com")
+
+    if not lookup_email:
+        st.info(" Supply a valid candidate email target vector above to generate analytical timelines.")
+        return
+
+    try:
+        res = supabase.rpc("get_churn_analysis", {"p_email": lookup_email.strip()}).execute()
+
+        if not res.data or res.data[0]['candidate_name'] is None:
+            st.warning(f"No active database ledger matching the identity matrix string: '{lookup_email}'")
+            return
+
+        p = res.data[0]
+
+        # Color coding risk profiles
+        risk_label = str(p['current_risk_level']).upper()
+        risk_color = "#34d399" if risk_label == "LOW" else ("#fbbf24" if risk_label == "MEDIUM" else "#f87171")
+
+        # Trend parsing flags
+        trend_label = str(p['engagement_trend']).upper()
+        trend_color = "#34d399" if "IMP" in trend_label else ("#60a5fa" if "STA" in trend_label else "#f87171")
+
+        # ── GRID COLUMN PANELS (Matches Candidate Explorer Style) ──────────────
+        pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
+        card_style = "height:100%; min-height:520px; display:flex; flex-direction:column; justify-content:space-between;"
+
+        # Column 1: Core Persona Identity Info Card
+        with pc1:
+            st.markdown(f"""
+            <div class="candidate-card" style="{card_style}">
+                <div>
+                    <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                        <i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Identity Profile
+                    </div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Full Name:</span> <b style="color:#e2e8f0;">{p.get('candidate_name', 'N/A')}</b></div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Target Email:</span> <b style="color:#38bdf8; font-size:13px;">{lookup_email}</b></div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Persona Group:</span> <b style="color:#e2e8f0;">{str(p.get('current_role', 'N/A')).title()}</b></div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{str(p.get('current_background', 'N/A')).upper()}</b></div>
+                </div>
+                <div style="margin-top:14px; padding:12px 14px; border-radius:8px; background:rgba(0,0,0,0.25); text-align:center; border: 1px solid rgba(255,255,255,0.05)">
+                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600; letter-spacing:0.5px; margin-bottom:2px;">Engagement Dynamic</div>
+                    <span style="color:{trend_color}; font-weight:800; font-size:15px;">{trend_label}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Column 2: Pipeline Vector Scoring Insights Card
+        with pc2:
+            prob_val = float(p.get('current_churn_probability') or 0.0)
+            st.markdown(f"""
+            <div class="candidate-card" style="{card_style}">
+                <div>
+                    <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                        <i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Evaluation Metrics
+                    </div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Pipeline Status:</span> <b style="color:#e2e8f0;">{p.get('current_status', 'In Queue')}</b></div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">AI Score Vector:</span> <b style="color:#e2e8f0;">{prob_val:.2%}</b></div>
+                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Risk Matrix Tier:</span> <b style="color:{risk_color};">{risk_label}</b></div>
+                </div>
+                <div style="margin-top:14px; padding:12px 14px; border-radius:8px; background:rgba(0,0,0,0.25); text-align:center; border: 1px solid rgba(255,255,255,0.05)">
+                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600; letter-spacing:0.5px; margin-bottom:2px;">Inference Risk Profile</div>
+                    <span style="color:{risk_color}; font-weight:800; font-size:15px;">{risk_label} CATEGORY</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Column 3: AI Remediations & Time History Logs Card
+        with pc3:
+            # Reconstruct AI Insight Cards
+            reasons_list = p.get("all_reasons", "No active pipeline vulnerabilities captured.")
+            recs_list = p.get("all_recommendations", "Maintain nominal engagement touchpoint intervals.")
+
+            reasons_html = ""
+            if isinstance(reasons_list, list):
+                reasons_html = "".join(
+                    [f"<div style='font-size:13px; color:#e2e8f0; margin-bottom:4px;'>&bull; {r}</div>" for r in
+                     reasons_list])
+            else:
+                reasons_html = f"<div style='font-size:13px; color:#e2e8f0;'>{reasons_list}</div>"
+
+            recs_html = ""
+            if isinstance(recs_list, list):
+                recs_html = "".join(
+                    [f"<div style='font-size:13px; color:#e2e8f0; margin-bottom:4px;'>&bull; {r}</div>" for r in
+                     recs_list])
+            else:
+                recs_html = f"<div style='font-size:13px; color:#e2e8f0;'>{recs_list}</div>"
+
+            ai_insights_panel = f"""
+            <div style='padding:14px; border-radius:8px; background:rgba(239,68,68,0.03); border:1px solid rgba(239,68,68,0.15); margin-bottom:10px;'>
+                <div style="font-size:12px; font-weight:700; color:#ef4444; text-transform:uppercase; margin-bottom:6px;"><i class="fa-solid fa-circle-exclamation"></i> Churn Risk Drivers</div>
+                {reasons_html}
+            </div>
+            <div style='padding:14px; border-radius:8px; background:rgba(16,185,129,0.03); border:1px solid rgba(16,185,129,0.15); margin-bottom:12px;'>
+                <div style="font-size:12px; font-weight:700; color:#10b981; text-transform:uppercase; margin-bottom:6px;"><i class="fa-solid fa-wand-magic-sparkles"></i> Action Blueprint</div>
+                {recs_html}
+            </div>
+            """
+
+            # Parse historical call logs
+            call_logs = p.get("call_history_json", [])
+            history_rows_html = "<div style='max-height:160px; overflow-y:auto; padding-right:4px;'>"
+            if call_logs and len(call_logs) > 0:
+                for call in call_logs:
+                    c_date = str(call.get('call_date', ''))[:10]
+                    c_sent = float(call.get('sentiment', 0.0))
+                    c_sent_color = "#34d399" if c_sent > 0 else ("#ef4444" if c_sent < 0 else "#94a3b8")
+                    c_rem = call.get('remarks', 'No remark notes captured.')
+
+                    history_rows_html += f"""
+                    <div style="background:rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:6px; margin-bottom:6px;">
+                        <div style="display:flex; justify-content:timezone; justify-content:space-between; font-size:11px; color:#94a3b8; margin-bottom:3px;">
+                            <span><b>📅 {c_date}</b></span>
+                            <span style="color:{c_sent_color};">Sentiment: {c_sent:+.2f}</span>
+                        </div>
+                        <div style="font-size:12px; color:#cbd5e1; line-height:1.3;">{c_rem}</div>
+                    </div>
+                    """
+            else:
+                history_rows_html += "<div style='color:#475569; font-style:italic; font-size:12px; padding:10px 0;'>No phone call touches tracked.</div>"
+            history_rows_html += "</div>"
+
+            st.markdown(f"""
+            <div class="candidate-card" style="{card_style}; justify-content:flex-start;">
+                <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                    <i class="fa-solid fa-brain" style="color:#f43f5e; margin-right:8px;"></i> Prescriptive AI Analysis
+                </div>
+                {ai_insights_panel}
+                <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:8px; letter-spacing:0.5px;">Live Communication Logs Trace</div>
+                {history_rows_html}
+            </div>
+            """, unsafe_allow_html=True)
+
+    except Exception as err:
+        st.error(f"Failed to generate unified candidate diagnostic matrix view: {err}")
+
+
 
 # ─────────────────────────────────────────────
 # PAGE 3 — CRM NOTES ANALYSIS
@@ -1722,58 +2018,51 @@ def page_live_predictor(df, model_data):
 
             # --- SUPABASE DATA WRITER ---
 
-                # A. Automatically capture the user's Client IP address
-                user_ip = st.context.ip_address if st.context.ip_address else "127.0.0.1"
+                # --- NEW IMPROVED DATA INSIGHT WRITER ---
+            user_ip = st.context.ip_address if st.context.ip_address else "127.0.0.1"
 
-                # B. CORRECTED: Access Streamlit Browser Session ID Using Direct Context Function
-                from streamlit.runtime.scriptrunner import get_script_run_ctx
-                ctx = get_script_run_ctx()
-                current_session_id = ctx.session_id if (ctx and hasattr(ctx, 'session_id')) else "unknown_session"
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            ctx = get_script_run_ctx()
+            current_session_id = ctx.session_id if (ctx and hasattr(ctx, 'session_id')) else "unknown"
 
-                # B. Check if this candidate email has a previous prediction recorded
-                prev_pred_id = None
-                if supabase is not None and c_email:
-                    try:
-                        prev_query = supabase.table("predictions") \
-                            .select("id") \
-                            .eq("email", c_email) \
-                            .order("predicted_at", desc=True) \
-                            .limit(1) \
-                            .execute()
+                # Look up Candidate ID to link relational views
+            resolved_candidate_id = None
+            if supabase is not None and c_email:
+                try:
+                    candidate_lookup = supabase.table("candidates").select("id").eq("email", c_email).limit(
+                            1).execute()
+                    if candidate_lookup.data:
+                            resolved_candidate_id = candidate_lookup.data[0]["id"]
+                except Exception:
+                    pass
 
-                        if prev_query.data:
-                            prev_pred_id = prev_query.data[0]["id"]
-                    except Exception as db_err:
-                        # This warning will show you the exact reason if it fails
-                        st.warning(f"Database Lookup Warning: {db_err}")
-                # Fallback gracefully if table hasn't been searched before
-
-                        # D. CALCULATE CONFIDENCE SCORE & DEFINE VERSION
-                        # Formula: How close the probability is to absolute certainty (0.0 or 1.0)
-                conf_score = round(abs(prob - 0.5) * 2, 4)
-
-                current_model_version = "v1.0.0-prod"  # Update this string whenever you deploy a new model file!
+            prev_pred_id = None
+            if supabase is not None and c_email:
+                try:
+                    prev_q = supabase.table("predictions").select("id").eq("email", c_email).order("predicted_at",
+                                                                                                       desc=True).limit(
+                            1).execute()
+                    if prev_q.data: prev_pred_id = prev_q.data[0]["id"]
+                except Exception:
+                    pass
 
             db_record = {
-                "semester": semester, "year_of_graduation": year_of_graduation, "experience": experience,
-                "total_amount": float(total_amount), "paid_amount": float(paid_amount), "course": course,
-                "track_interested": track_interested, "city": city, "mailing_state": mailing_state,
-                "mailing_country": mailing_country, "source_of_lead": source, "gender": gender, "invoice": invoice,
-                "mode_of_program": mode, "program_location": program_location, "education": education,
-                "batch_assigned": batch_assigned, "stream": stream, "induction_session": induction_session,
-                "feedback": feedback, "payment_mode": payment_mode, "email": c_email,
-                "predicted_status": "Churned" if pred == 1 else "Joined", "churn_probability": round(prob, 4),
-                "risk_factors": identify_risk_factors(input_data), "model_algorithm": model_display,
-                "predicted_by": st.session_state.get("user_email", "dashboard_agent"),
-                "risk_level": "high" if prob > 0.65 else ("medium" if prob > 0.35 else "low"),
-
-                "client_ip": user_ip,
-                "previous_prediction_id": prev_pred_id,
-                "session_id": current_session_id,
-                "confidence_score": conf_score,
-                "model_version": current_model_version
-
-            }
+                    "candidate_id": resolved_candidate_id,  # Linking key added
+                    "semester": semester, "year_of_graduation": year_of_graduation, "experience": experience,
+                    "total_amount": float(total_amount), "paid_amount": float(paid_amount), "course": course,
+                    "track_interested": track_interested, "city": city, "mailing_state": mailing_state,
+                    "mailing_country": mailing_country, "source_of_lead": source, "gender": gender, "invoice": invoice,
+                    "mode_of_program": mode, "program_location": program_location, "education": education,
+                    "batch_assigned": batch_assigned, "stream": stream, "induction_session": induction_session,
+                    "feedback": feedback, "payment_mode": payment_mode, "email": c_email,
+                    "predicted_status": "Churned" if pred == 1 else "Joined", "churn_probability": round(prob, 4),
+                    "risk_factors": identify_risk_factors(input_data), "model_algorithm": model_display,
+                    "predicted_by": st.session_state.get("user_email", "dashboard_agent"),
+                    "risk_level": "high" if prob > 0.65 else ("medium" if prob > 0.35 else "low"),
+                    "client_ip": user_ip, "previous_prediction_id": prev_pred_id, "session_id": current_session_id,
+                    "confidence_score": round(abs(prob - 0.5) * 2, 4), "model_version": "v1.0.0-prod"
+                    # Note: "role" is removed because your database trigger computes it automatically!
+                }
 
             if supabase is not None:
                 with st.spinner("Streaming analytical updates back to ledger database server..."):
@@ -2362,6 +2651,9 @@ def page_profile():
 # ==============================================================================
 # MAIN PAGE ROUTER ENGINE
 # ==============================================================================
+# ==============================================================================
+# MAIN PAGE ROUTER ENGINE (FULLY UPDATED)
+# ==============================================================================
 def main():
     if not st.session_state.get("logged_in", False):
         page_auth()
@@ -2387,7 +2679,15 @@ def main():
     # 1. Execute early sidebar processing data pass
     page = sidebar()
 
-    # 2. Render right-hand side Profile UI switch toggler
+    # 2. Extract the authenticated User's UUID dynamically from Supabase
+    try:
+        user_session_info = supabase.auth.get_user(st.session_state.get("access_token"))
+        logged_in_user_uuid = user_session_info.user.id
+    except Exception:
+        # Fallback tracking target if session token parsing is unstable
+        logged_in_user_uuid = "00000000-0000-0000-0000-000000000000"
+
+    # 3. Render right-hand side Profile UI switch toggler
     c_left, c_right = st.columns([10, 1])
     with c_right:
         st.markdown('<div class="profile-btn">', unsafe_allow_html=True)
@@ -2401,7 +2701,7 @@ def main():
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # 3. FIX: Sidebar state check exits Profile View if a menu link is explicitly clicked
+    # 4. Sidebar state check exits Profile View if a menu link is explicitly clicked
     if st.session_state.get("show_profile", False):
         if st.session_state.get("current_page", "Overview") != st.session_state.get("last_seen_page", page):
             st.session_state.show_profile = False
@@ -2412,12 +2712,9 @@ def main():
 
     st.session_state.last_seen_page = page
 
-    # 4. Storage Loader Process Memory Block
+    # 5. Storage Loader Process Memory Block
     with st.spinner("Loading data..."):
         try:
-            if st.button(" Refresh Data"):
-                st.cache_data.clear()
-                st.rerun()
             df, notes = load_data()
         except Exception as e:
             st.error(f"Could not load data files: {e}")
@@ -2427,20 +2724,28 @@ def main():
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model()
 
-    # 5. Master Multi-Page Execution Routing Branch
-    if "Overview" in page:
+    # 6. Master Multi-Page Execution Routing Branch (With New Additions)
+    if page == "Overview":
         page_overview(df, notes)
-    elif "Candidate Explorer" in page:
+    elif page == "Candidate Explorer":
         page_candidate_explorer(df, notes)
-    elif "CRM Notes Analysis" in page:
+
+    elif page == "Smart Agent Workspace":
+        # 🌟 RUNS NEW WORKSPACE CONTAINER (Forms, Real-Time KPIs, Smart Task Reminders)
+        render_agent_workspace_and_logger(supabase, logged_in_user_uuid)
+
+    #elif page == "360° Candidate Diagnostics":
+        # 🌟 RUNS NEW COMPREHENSIVE TIMELINE DIAGNOSTIC HUB
+    #    render_360_student_analytics_hub(supabase)
+
+    elif page == "CRM Notes Analysis":
         page_notes_analysis(df, notes)
-    elif "Invoice Analysis" in page:
+    elif page == "Invoice Analysis":
         page_payment_analysis(df)
     elif "Predictor" in page:
         page_live_predictor(df, model_data)
     elif "Model Performance" in page:
         page_model_performance(df, model_data)
-
 
 if __name__ == "__main__":
     main()
