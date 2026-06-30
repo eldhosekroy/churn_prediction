@@ -761,8 +761,6 @@ def load_data():
                 "csv_contact_owner": "Contact Owner",
                 "Payment_Date": "Payment Date",
                 "Payment_mode": "Payment_mode",
-                "Paid_amount": "Paid Amount",
-                "Total_Amount": "Total_Amount",
                 "Source of Lead": "Source of lead",
                 "Feedback": "Feedback",
                 "Invoice": "Invoice",
@@ -812,6 +810,10 @@ def preprocess(df, notes):
     df['Experience'] = pd.to_numeric(df['Experience'], errors='coerce').fillna(0.0)
     df['Semester'] = pd.to_numeric(df['Semester'], errors='coerce').fillna(0).astype(int)
     df['Year of Graduation'] = pd.to_numeric(df['Year of Graduation'], errors='coerce').fillna(0).astype(int)
+    if 'Paid_amount' in df.columns:
+        df['Paid_amount'] = pd.to_numeric(df['Paid_amount'], errors='coerce').fillna(0.0)
+    if 'Total_Amount' in df.columns:
+        df['Total_Amount'] = pd.to_numeric(df['Total_Amount'], errors='coerce').fillna(0.0)
 
     df['Course'] = df['Course'].fillna('Unknown')
     df['Invoice'] = df['Invoice'].fillna('No')
