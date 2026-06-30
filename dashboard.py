@@ -1684,191 +1684,229 @@ def render_candidate_entry_form(df, notes):
                 return cleaned
         return [""]
 
-    # Extract available course options
+    # Extract available options
     course_opts = get_exact_dataset_options('Course')
+    edu_opts = get_exact_dataset_options('Education')
+    yog_opts = get_exact_dataset_options('Year of Graduation')
+    sem_opts = get_exact_dataset_options('Semester')
+    stream_opts = get_exact_dataset_options('Stream')
+    track_opts = get_exact_dataset_options('Track Interested')
+    mode_opts = get_exact_dataset_options('Mode of Program Joined')
+    loc_opts = get_exact_dataset_options('Program Location')
+    ind_opts = get_exact_dataset_options('Induction session')
+    city_opts = get_exact_dataset_options('City')
+    state_opts = get_exact_dataset_options('Mailing State')
+    country_opts = get_exact_dataset_options('Mailing Country')
+    pay_mode_opts = get_exact_dataset_options('Payment_mode')
+    source_opts = get_exact_dataset_options('Source of lead')
 
-    # ── 🛠️ STEP 1: PLACE COURSE SELECTION OUTSIDE THE FORM FOR LIVE RERUNS ──
-    st.markdown("<div style='margin-bottom: -15px;'></div>", unsafe_allow_html=True)
-    course = st.selectbox("Course Domain Selection (Updates Form Pricing Dynamically) *", course_opts,
-                          key="inp_course_live")
+    # Wizard State Initialization
+    if "candidate_step" not in st.session_state:
+        st.session_state.candidate_step = 1
+    if "candidate_form_data" not in st.session_state:
+        st.session_state.candidate_form_data = {}
 
-    # ── 🛠️ STEP 2: CALCULATE THE DYNAMIC VALUE ON THE FLY ──
-    default_total_fee = 0.0
-    if 'Course' in df.columns and 'Total_Amount' in df.columns:
-        matched_amounts = df[df['Course'] == course]['Total_Amount'].dropna()
-        if not matched_amounts.empty:
-            try:
-                # Pull the most frequent price recorded (Mode) for this specific course
-                default_total_fee = float(matched_amounts.mode().iloc[0])
-            except Exception:
-                default_total_fee = float(matched_amounts.mean())
+    def get_index(options_list, val):
+        return options_list.index(val) if val in options_list else 0
 
-    # ── Intake Form ─────────────────────────────────────────────
-    with st.form("candidate_intake_form", clear_on_submit=True):
+    st.markdown(f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.candidate_step} of 2</div>', unsafe_allow_html=True)
+    st.progress(st.session_state.candidate_step / 2.0)
 
-        # Section 1: Personal & Professional Info
-        st.markdown(
-            '<div class="section-header" style="margin-top:10px;"><h2><i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Personal &amp; Professional Info</h2></div>',
-            unsafe_allow_html=True)
+    if st.session_state.candidate_step == 1:
+        st.markdown('<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-user" style="color:#6366f1; margin-right:8px;"></i> Step 1: Personal & Academic Profile</h2></div>', unsafe_allow_html=True)
 
-        f1, f2, f3 = st.columns(3)
-        with f1:
-            candidate_name = st.text_input("Name *", placeholder="John Doe", key="inp_name")
-            contact_id = st.text_input("Contact ID *", placeholder="zcrm_XXXX", key="inp_cid")
-        with f2:
-            email = st.text_input("Email *", placeholder="john@example.com", key="inp_email")
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-id-card" style="margin-right:8px;"></i> Personal Identity</div>', unsafe_allow_html=True)
+        col_ident1, col_ident2 = st.columns(2)
+        with col_ident1:
+            candidate_name = st.text_input("Name *", value=st.session_state.candidate_form_data.get('candidate_name', ""), placeholder="John Doe")
+            email = st.text_input("Email *", value=st.session_state.candidate_form_data.get('email', ""), placeholder="john@example.com")
+            contact_phone = st.text_input("Phone *", value=st.session_state.candidate_form_data.get('contact_phone', ""), placeholder="XXXXX XXXXX")
+        with col_ident2:
+            contact_id = st.text_input("Contact ID *", value=st.session_state.candidate_form_data.get('contact_id', ""), placeholder="zcrm_XXXX")
             gender_opts = ['Male', 'Female']
-            gender = st.selectbox("Gender *", gender_opts, key="inp_gender")
-        with f3:
-            contact_phone = st.text_input("Phone *", placeholder=" XXXXX XXXXX", key="inp_phone")
-            experience_years = st.number_input("Work Experience (Years) *", min_value=0.0, max_value=50.0, step=0.5,
-                                               format="%.1f", key="inp_exp_years")
+            gender = st.selectbox("Gender *", gender_opts, index=get_index(gender_opts, st.session_state.candidate_form_data.get('gender')))
+            experience_years = st.number_input("Work Experience (Years) *", min_value=0.0, max_value=50.0, value=st.session_state.candidate_form_data.get('experience_years', 0.0), step=0.5, format="%.1f")
 
-        # Academic Foundations Layout
-        f_edu1, f_edu2, f_edu3 = st.columns(3)
-        with f_edu1:
-            edu_opts = get_exact_dataset_options('Education')
-            education = st.selectbox("Education Background *", edu_opts, key="inp_edu")
-        with f_edu2:
-            yog_opts = get_exact_dataset_options('Year of Graduation')
-            year_of_graduation = st.selectbox("Year of Graduation *", yog_opts, key="inp_yog")
-        with f_edu3:
-            sem_opts = get_exact_dataset_options('Semester')
-            semester = st.selectbox("Current Semester *", sem_opts, key="inp_semester")
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Enrollment & Academic Details</div>', unsafe_allow_html=True)
+        col_edu1, col_edu2 = st.columns(2)
+        with col_edu1:
+            course = st.selectbox("Course Domain Selection *", course_opts, index=get_index(course_opts, st.session_state.candidate_form_data.get('course')), key="inp_course_live")
+            education = st.selectbox("Education Background *", edu_opts, index=get_index(edu_opts, st.session_state.candidate_form_data.get('education')))
+        with col_edu2:
+            year_of_graduation = st.selectbox("Year of Graduation *", yog_opts, index=get_index(yog_opts, st.session_state.candidate_form_data.get('year_of_graduation')))
+            semester = st.selectbox("Current Semester *", sem_opts, index=get_index(sem_opts, st.session_state.candidate_form_data.get('semester')))
 
-        # Section 2: Course & Status Configuration
-        st.markdown(
-            '<div class="section-header"><h2><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Course &amp; Status Parameters</h2></div>',
-            unsafe_allow_html=True)
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Evaluation Notes</div>', unsafe_allow_html=True)
+        background_override = st.text_area("Feedback / Background Override Notes *", value=st.session_state.candidate_form_data.get('background_override', ""), placeholder="Add unique profile feedback notes for categorization...")
 
-        f4, f5, f6 = st.columns(3)
-        with f4:
-            # Displays the selected course context information as text inside the form boundary
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        default_total_fee = 0.0
+        if 'Course' in df.columns and 'Total_Amount' in df.columns:
+            matched_amounts = df[df['Course'] == course]['Total_Amount'].dropna()
+            if not matched_amounts.empty:
+                try:
+                    default_total_fee = float(matched_amounts.mode().iloc[0])
+                except Exception:
+                    default_total_fee = float(matched_amounts.mean())
+
+        c1, c2 = st.columns([4, 1])
+        with c2:
+            if st.button("Next", type="primary", icon=":material/arrow_forward:", use_container_width=True):
+                # Simple validation of Step 1 fields
+                if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not background_override.strip():
+                    st.error("Submission Denied: All text fields must be fully populated.")
+                else:
+                    st.session_state.candidate_form_data.update({
+                        'candidate_name': candidate_name,
+                        'contact_id': contact_id,
+                        'email': email,
+                        'gender': gender,
+                        'contact_phone': contact_phone,
+                        'experience_years': experience_years,
+                        'course': course,
+                        'default_total_fee': default_total_fee,
+                        'education': education,
+                        'year_of_graduation': year_of_graduation,
+                        'semester': semester,
+                        'background_override': background_override
+                    })
+                    st.session_state.candidate_step = 2
+                    st.rerun()
+
+    elif st.session_state.candidate_step == 2:
+        st.markdown('<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Step 2: Enrollment & Billing Details</h2></div>', unsafe_allow_html=True)
+
+        course = st.session_state.candidate_form_data.get('course', course_opts[0])
+        default_total_fee = st.session_state.candidate_form_data.get('default_total_fee', 0.0)
+
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Track Configuration</div>', unsafe_allow_html=True)
+        col_course1, col_course2 = st.columns(2)
+        with col_course1:
             st.info(f"Selected Course: **{course}**")
+            stream = st.selectbox("Interested Stream *", stream_opts, index=get_index(stream_opts, st.session_state.candidate_form_data.get('stream')))
+            track_interested = st.selectbox("Track Customization *", track_opts, index=get_index(track_opts, st.session_state.candidate_form_data.get('track_interested')))
+        with col_course2:
+            program_mode = st.selectbox("Mode of Program Joined *", mode_opts, index=get_index(mode_opts, st.session_state.candidate_form_data.get('program_mode')))
+            program_location = st.selectbox("Program Location *", loc_opts, index=get_index(loc_opts, st.session_state.candidate_form_data.get('program_location')))
+            batch_assigned = st.text_input("Batch Assigned *", value=st.session_state.candidate_form_data.get('batch_assigned', ""), placeholder="Aug 2026")
 
-            stream_opts = get_exact_dataset_options('Stream')
-            stream = st.selectbox("Interested Stream *", stream_opts, key="inp_stream")
-        with f5:
-            track_opts = get_exact_dataset_options('Track Interested')
-            track_interested = st.selectbox("Track Customization *", track_opts, key="inp_track")
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Regional Details</div>', unsafe_allow_html=True)
+        col_reg1, col_reg2, col_reg3 = st.columns(3)
+        with col_reg1:
+            city = st.selectbox("City *", city_opts, index=get_index(city_opts, st.session_state.candidate_form_data.get('city')))
+        with col_reg2:
+            mailing_state = st.selectbox("State *", state_opts, index=get_index(state_opts, st.session_state.candidate_form_data.get('mailing_state')))
+        with col_reg3:
+            mailing_country = st.selectbox("Country *", country_opts, index=get_index(country_opts, st.session_state.candidate_form_data.get('mailing_country')))
 
-            mode_opts = get_exact_dataset_options('Mode of Program Joined')
-            program_mode = st.selectbox("Mode of Program Joined *", mode_opts, key="inp_pmode")
-        with f6:
-            loc_opts = get_exact_dataset_options('Program Location')
-            program_location = st.selectbox("Program Location *", loc_opts, key="inp_ploc")
-
-            feedback_opts = ["Positive", "Negative", "Neutral"]
-            feedback_status = st.selectbox("Candidate Intake Feedback *", feedback_opts, key="inp_feedback_status")
-
-        # Balance layout spacing for induction session & batch assignment
-        f_ind1, f_ind2 = st.columns(2)
-        with f_ind1:
-            ind_opts = get_exact_dataset_options('Induction session')
-            induction_session = st.selectbox("Induction session *", ind_opts, key="inp_induction")
-        with f_ind2:
-            batch_assigned = st.text_input("Batch Assigned *", placeholder="Aug 2026", key="inp_batch")
-
-        # Section 3: Regional Location Coordinates
-        st.markdown(
-            '<div class="section-header"><h2><i class="fa-solid fa-map-location-dot" style="color:#60a5fa; margin-right:8px;"></i> Regional Details</h2></div>',
-            unsafe_allow_html=True)
-
-        f7, f8, f9 = st.columns(3)
-        with f7:
-            city_opts = get_exact_dataset_options('City')
-            city = st.selectbox("City *", city_opts, key="inp_city")
-        with f8:
-            state_opts = get_exact_dataset_options('Mailing State')
-            mailing_state = st.selectbox("State *", state_opts, key="inp_state")
-        with f9:
-            country_opts = get_exact_dataset_options('Mailing Country')
-            mailing_country = st.selectbox("Country *", country_opts, key="inp_country")
-
-        # ── 💸 SECTION 4: Financial Transactions & Lead Origin ──
-        st.markdown(
-            '<div class="section-header"><h2><i class="fa-solid fa-credit-card" style="color:#fbbf24; margin-right:8px;"></i> Financials &amp; Lead Source</h2></div>',
-            unsafe_allow_html=True)
-
-        f_fin1, f_fin2, f_fin3 = st.columns(3)
-        with f_fin1:
-            payment_date = st.date_input("Payment Date", value=None, key="inp_pay_date")
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Billing & Finance Details</div>', unsafe_allow_html=True)
+        col_fin1, col_fin2 = st.columns(2)
+        with col_fin1:
+            payment_date = st.date_input("Payment Date", value=st.session_state.candidate_form_data.get('payment_date'), key="inp_pay_date")
             pay_mode_opts = get_exact_dataset_options('Payment_mode')
-            payment_mode = st.selectbox("Payment Mode", pay_mode_opts, key="inp_pay_mode")
-        with f_fin2:
-            paid_amount = st.number_input("Paid Amount", min_value=0.0, step=100.0, format="%.2f", key="inp_paid_amt")
-            # 🌟 This field now correctly captures and reflects changes instantaneously!
-            total_amount = st.number_input("Total Amount", min_value=0.0, value=default_total_fee, step=100.0,
-                                           format="%.2f", key="inp_tot_amt")
-        with f_fin3:
-            source_opts = get_exact_dataset_options('Source of lead')
-            source_of_lead = st.selectbox("Source of Lead", source_opts, key="inp_source")
+            payment_mode = st.selectbox("Payment Mode", pay_mode_opts, index=get_index(pay_mode_opts, st.session_state.candidate_form_data.get('payment_mode')))
+            invoice_status = st.selectbox("Invoice Generated?", ["No", "Yes"], index=["No", "Yes"].index(st.session_state.candidate_form_data.get('invoice_status', 'No')) if st.session_state.candidate_form_data.get('invoice_status') in ["No", "Yes"] else 0)
+        with col_fin2:
+            paid_amount = st.number_input("Paid Amount", min_value=0.0, value=st.session_state.candidate_form_data.get('paid_amount', 0.0), step=100.0, format="%.2f")
+            total_amount = st.number_input("Total Amount", min_value=0.0, value=st.session_state.candidate_form_data.get('total_amount', default_total_fee), step=100.0, format="%.2f")
 
-            invoice_status = st.selectbox("Invoice Generated?", ["No", "Yes"], key="inp_invoice")
+        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Lead Details</div>', unsafe_allow_html=True)
+        col_onb1, col_onb2, col_onb3 = st.columns(3)
+        with col_onb1:
+            source_of_lead = st.selectbox("Source of Lead", source_opts, index=get_index(source_opts, st.session_state.candidate_form_data.get('source_of_lead')))
+        with col_onb2:
+            feedback_opts = ["Positive", "Negative", "Neutral"]
+            feedback_status = st.selectbox("Candidate Intake Feedback *", feedback_opts, index=get_index(feedback_opts, st.session_state.candidate_form_data.get('feedback_status')))
+        with col_onb3:
+            induction_session = st.selectbox("Induction Session *", ind_opts, index=get_index(ind_opts, st.session_state.candidate_form_data.get('induction_session')))
 
-        # ── 📊 SECTION 5: Verification & Communications ──
-        st.markdown(
-            '<div class="section-header"><h2><i class="fa-solid fa-square-check" style="color:#a78bfa; margin-right:8px;"></i> Verification &amp; Communications</h2></div>',
-            unsafe_allow_html=True)
-
-        chk1, chk2 = st.columns(2)
-        with chk1:
-            test_cleared = st.checkbox("Passed Required Test Engine", value=False, key="inp_test_bool")
-        with chk2:
-            followup_sent = st.checkbox("Sent Initial Followup Email", value=False, key="inp_follow_bool")
-
-        # Section 6: Extra Metadata Notes
-        st.markdown(
-            '<div class="section-header"><h2><i class="fa-solid fa-clipboard" style="color:#f43f5e; margin-right:8px;"></i> Internal Evaluation Data</h2></div>',
-            unsafe_allow_html=True)
-
-        background_override = st.text_area("Feedback / Background Override Notes *",
-                                           placeholder="Add unique profile feedback notes for categorization...",
-                                           key="inp_feedback")
-
-        # Form Action Trigger Button
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        submit_btn = st.form_submit_button("Create Candidate Profile")
+        col_chk1, col_chk2 = st.columns(2)
+        with col_chk1:
+            test_cleared = st.checkbox("Passed Required Test Engine", value=st.session_state.candidate_form_data.get('test_cleared', False))
+        with col_chk2:
+            followup_sent = st.checkbox("Sent Initial Followup Email", value=st.session_state.candidate_form_data.get('followup_sent', False))
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1,3,1])
+        with c1:
+            if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
+                # Save current Step 2 fields to session state
+                st.session_state.candidate_form_data.update({
+                    'course': course,
+                    'stream': stream,
+                    'track_interested': track_interested,
+                    'program_mode': program_mode,
+                    'program_location': program_location,
+                    'batch_assigned': batch_assigned,
+                    'city': city,
+                    'mailing_state': mailing_state,
+                    'mailing_country': mailing_country,
+                    'payment_date': payment_date,
+                    'payment_mode': payment_mode,
+                    'paid_amount': paid_amount,
+                    'total_amount': total_amount,
+                    'source_of_lead': source_of_lead,
+                    'feedback_status': feedback_status,
+                    'induction_session': induction_session,
+                    'invoice_status': invoice_status,
+                    'test_cleared': test_cleared,
+                    'followup_sent': followup_sent
+                })
+                st.session_state.candidate_step = 1
+                st.rerun()
+        with c3:
+            submit_btn = st.button("Create Profile", type="primary", icon=":material/check:", use_container_width=True)
 
         if submit_btn:
-            required_fields = [
-                candidate_name.strip(), contact_id.strip(), email.strip(), contact_phone.strip(),
-                batch_assigned.strip(), background_override.strip()
-            ]
+            # Stage all data
+            fd = st.session_state.candidate_form_data
+            candidate_name = fd.get('candidate_name', '')
+            contact_id = fd.get('contact_id', '')
+            email = fd.get('email', '')
+            contact_phone = fd.get('contact_phone', '')
+            gender = fd.get('gender', '')
+            experience_years = fd.get('experience_years', 0.0)
+            education = fd.get('education', '')
+            year_of_graduation = fd.get('year_of_graduation', '')
+            semester = fd.get('semester', '')
+            background_override = fd.get('background_override', '')
 
-            if any(not field for field in required_fields) or "" in [gender, education, year_of_graduation, semester,
-                                                                     course, stream, program_mode]:
-                st.error("Submission Denied: All text selections and fields must be fully valid and populated.")
+            # Simple validation of all fields
+            if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not batch_assigned.strip() or not background_override.strip():
+                st.error("Submission Denied: All required fields must be fully valid and populated.")
                 return
 
-            # ── 1. Cleanly Normalize the Streamlit Email ──
+            # Salesperson mapping lookup
             logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
+            
+            # Map gmail logins to their @rp2.com database equivalents (for RLS alignment)
+            lookup_email = logged_in_email
+            if logged_in_email == "amalkbasheer@gmail.com":
+                lookup_email = "amalkbasheer@rp2.com"
+            elif logged_in_email == "darkeldhose@gmail.com":
+                lookup_email = "darkeldhose@rp2.com"
 
-            # ── 2. Structural Verification Lookup (Python-Driven) ──
             resolved_owner = None
-
             try:
                 mapping_res = supabase.table("salesperson_mappings").select("salesperson_email, legacy_label").execute()
-
                 if mapping_res.data:
                     for row in mapping_res.data:
                         db_email = str(row.get("salesperson_email", "")).strip().lower()
-                        if db_email == logged_in_email:
+                        if db_email == lookup_email:
                             resolved_owner = row.get("legacy_label")
                             break
 
                 if not resolved_owner:
-                    st.error(
-                        f" Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
+                    st.error(f"Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
                     return
                 else:
-                    st.toast(f" Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
-
+                    st.toast(f"Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
             except Exception as lookup_err:
                 st.error(f"Mapping Database Communication Interruption: {lookup_err}")
                 return
 
-            # ── 3. Final Multi-Payload Construction ──
             formatted_payment_date = str(payment_date) if payment_date is not None else None
 
             candidate_payload = {
@@ -1883,7 +1921,7 @@ def render_candidate_entry_form(df, notes):
                 "city": city,
                 "mailing_state": mailing_state,
                 "mailing_country": mailing_country,
-                "course": course,  # Saves the dynamically selected course option
+                "course": course,
                 "stream": stream,
                 "track_interested": track_interested,
                 "batch_assigned": batch_assigned.strip(),
@@ -1892,15 +1930,11 @@ def render_candidate_entry_form(df, notes):
                 "induction_session": induction_session,
                 "background_override": background_override.strip(),
                 "csv_contact_owner": resolved_owner,
-
-                # ── Dynamic Relational Assignments ──
                 "Payment_Date": formatted_payment_date,
                 "Payment_mode": payment_mode if payment_mode != "" else None,
                 "Paid_amount": float(paid_amount),
                 "Total_Amount": float(total_amount),
                 "Source of Lead": source_of_lead if source_of_lead != "" else None,
-
-                # Fields mapped to structured outputs
                 "Feedback": feedback_status,
                 "Invoice": invoice_status,
                 "Experience": str(experience_years),
@@ -1911,8 +1945,10 @@ def render_candidate_entry_form(df, notes):
             try:
                 with st.spinner("Synchronizing record with Supabase CRM Database..."):
                     supabase.table("candidates").insert(candidate_payload).execute()
-                    st.success(
-                        f"Profile for **{candidate_name}** has been successfully generated and linked to {resolved_owner}. :material/check:")
+                    st.success(f"Profile for **{candidate_name}** has been successfully generated and linked to {resolved_owner}.")
+                    # Clear session state data on success
+                    st.session_state.candidate_form_data = {}
+                    st.session_state.candidate_step = 1
             except Exception as e:
                 st.error(f"Ingestion Interruption: {e}")
 
