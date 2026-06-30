@@ -795,10 +795,14 @@ def preprocess(df, notes):
 
     # Locate the target notes entry text area column safely
     note_col = 'background_override' if 'background_override' in df.columns else 'Background Override Notes'
+
     if note_col in df.columns:
+        # 🌟 THE FIX: Convert Database NULLs/None directly to 'N/A' to match your CSV logic exactly
         df[note_col] = df[note_col].fillna('N/A').astype(str).str.strip()
+        # If the database string literal is empty, treat it as 'N/A'
+        df[note_col] = df[note_col].apply(lambda x: 'N/A' if x == '' or x.lower() == 'none' else x)
     else:
-        df[note_col] = ''
+        df[note_col] = 'N/A'
 
     # ── 🛠️ 2. EXTRACT final_inferred_reason VIA KEYWORD MATRIX ──
     def infer_status_and_reason_from_notes(val_input):
