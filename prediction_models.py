@@ -1,3 +1,5 @@
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 import os
 import re
 import time
@@ -80,13 +82,13 @@ base_dir = os.path.join('data')
 
 input_dir =base_dir
 # Read the enrolled & registered dataset
-enrolled_df = pd.read_csv(os.path.join(input_dir, 'Endrolled & registred.csv'), encoding='latin1')
+enrolled_df = pd.read_excel(os.path.join(input_dir, 'Endrolled & registred.xlsx'))
 
 # Read the all notes dataset
-notes = pd.read_csv(os.path.join(input_dir, 'All Notes-Contacts_copy.csv'), encoding='latin1')
+notes = pd.read_excel(os.path.join(input_dir, 'All Notes-Contacts_copy.xlsx'))
 
-print(f"Successfully loaded 'Endrolled & registred.csv' into enrolled_df from {input_dir}")
-print(f"Successfully loaded 'All Notes-Contacts_copy.csv' into notes from {input_dir}")
+print(f"Successfully loaded 'Endrolled & registred.xlsx' into enrolled_df from {input_dir}")
+print(f"Successfully loaded 'All Notes-Contacts_copy.xlsx' into notes from {input_dir}")
 
 print('\nNotes DataFrame Head:')
 print(notes.head())

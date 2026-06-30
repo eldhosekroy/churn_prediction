@@ -749,7 +749,9 @@ def load_data():
                 "Invoice": "Invoice",
                 "Experience": "Experience",
                 "Test": "Test",
-                "Followup Email": "Followup Email"
+                "Followup Email": "Followup Email",
+                "gender": "Gender",
+                "education": "Education"
             }
             # Rename columns safely if they exist in the incoming dataframe payload
             existing_renames = {k: v for k, v in rename_mapping.items() if k in df.columns}
@@ -2379,31 +2381,30 @@ def page_live_predictor(df, model_data):
     if not isinstance(available_models, dict) or (hasattr(available_models, 'empty') and available_models.empty):
         available_models = {model_data.get('model_display_name', 'Default Model'): model_data.get('model')}
 
-    # Model Selection UI
-    st.markdown('<div class="section-header"><h2>Candidate Details & AI Settings</h2></div>', unsafe_allow_html=True)
+    # Wizard State Initialization
+    if 'predictor_step' not in st.session_state:
+        st.session_state.predictor_step = 1
+    if 'predictor_data' not in st.session_state:
+        st.session_state.predictor_data = {}
+
+    def update_data(**kwargs):
+        st.session_state.predictor_data.update(kwargs)
+
+    def next_step():
+        st.session_state.predictor_step += 1
+
+    def prev_step():
+        st.session_state.predictor_step -= 1
+
+    st.markdown(f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.predictor_step} of 3</div>', unsafe_allow_html=True)
+    st.progress(st.session_state.predictor_step / 3.0)
+
     llm_options = ["Gemini 2.5 Flash", "Groq (Llama 3)", "Hugging Face (Mistral)"]
     ml_options = list(available_models.keys())
     all_options = llm_options + ml_options
 
-    col_ai, col_ident = st.columns([1, 2])
-    with col_ai:
-        selected_model_name = st.selectbox(
-            "Select AI Model",
-            options=all_options,
-            help="Choose which trained algorithm or AI to use for the prediction."
-        )
-    with col_ident:
-        c_email = st.text_input(
-            "Candidate Email Identity (Database Primary Key Identifier)",
-            value="candidate_audit@domain.com",
-            help="The evaluation history record will log to the production server linked under this index."
-        )
-
-    is_llm = selected_model_name in llm_options
-
-    if not is_llm:
-        model = available_models[selected_model_name]
-
+    pd_state = st.session_state.predictor_data
+    
     # Extract model artifacts from model_data
     final_model = model_data.get('model')
     feature_columns = model_data.get('feature_columns', [])
@@ -2411,124 +2412,199 @@ def page_live_predictor(df, model_data):
     categorical_features = model_data.get('categorical_features', [])
     balance_method = model_data.get('balance_method', 'none')
 
-    st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
-    st.markdown(
-        f"**Model Context:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing Matrix:** {format_balance_method(balance_method)}")
-
     # Filter for valid Status values
     df = df[df['Status'].isin(['Churned', 'Joined'])].copy()
 
-    # Row 1: Core categorical features
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        gender = st.selectbox("Gender", sorted(df['Gender'].dropna().unique()), key="p_gender")
-        course = st.selectbox("Course", sorted(df['Course'].dropna().unique()), key="p_course")
-        source = st.selectbox("Source of lead", sorted(df['Source of lead'].dropna().unique()), key="p_source")
-    with col2:
-        stream = st.selectbox("Stream", sorted(df['Stream'].dropna().unique()), key="p_stream")
-        track_interested = st.selectbox("Track Interested", sorted(df['Track Interested'].dropna().unique()),
-                                        key="p_track")
-        mode = st.selectbox("Mode of Program Joined", sorted(df['Mode of Program Joined'].dropna().unique()),
-                            key="p_mode")
-    with col3:
-        education = st.selectbox("Education", sorted(df['Education'].dropna().unique()), key="p_edu")
-        batch_assigned = st.selectbox("Batch Assigned", sorted(df['Batch Assigned'].dropna().unique()), key="p_ba")
-        #st.info("💡 **Role Priority:** Calculated via PostgreSQL automation triggers upon write pipeline execution.")
+    def get_index(options_list, val):
+        return options_list.index(val) if val in options_list else 0
 
-    # Row 2: Additional categorical features
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        city = st.selectbox("City", sorted(df['City'].dropna().unique()), key="p_city")
-        mailing_state = st.selectbox("Mailing State", sorted(df['Mailing State'].dropna().unique()), key="p_state")
-        mailing_country = st.selectbox("Mailing Country", sorted(df['Mailing Country'].dropna().unique()),
-                                       key="p_country")
-    with col2:
-        invoice = st.selectbox("Invoice", sorted(df['Invoice'].dropna().unique()), key="p_invoice")
-        program_location = st.selectbox("Program Location", sorted(df['Program Location'].dropna().unique()),
-                                        key="p_loc")
-        #st.info("💡 **Background Classification:** Derived instantly via background schema triggers.")
-    with col3:
-        induction_session = st.selectbox("Induction Session", sorted(df['Induction session'].dropna().unique()),
-                                         key="p_ind")
-        feedback = st.selectbox("Feedback", sorted(df['Feedback'].dropna().unique()), key="p_fb")
-        payment_mode = st.selectbox("Payment Mode", sorted(df['Payment_mode'].dropna().unique()), key="p_pm")
+    if st.session_state.predictor_step == 1:
+        st.markdown('<div class="section-header"><h2>Core Details & AI Settings</h2></div>', unsafe_allow_html=True)
+        col_ai, col_ident = st.columns([1, 2])
+        with col_ai:
+            selected_model_name = st.selectbox("Select AI Model", options=all_options, index=get_index(all_options, pd_state.get('selected_model_name', all_options[0])), help="Choose which trained algorithm or AI to use for the prediction.")
+        with col_ident:
+            c_email = st.text_input("Candidate Email Identity (Database Primary Key Identifier)", value=pd_state.get('c_email', "candidate_audit@domain.com"), help="The evaluation history record will log to the production server linked under this index.")
 
-    # Row 3: Numerical features
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        semester = st.number_input("Semester", 0, 10, 3, key="p_sem")
-        year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
-                                             value=2026, key="p_yog")
-        experience = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
-    with col2:
-        total_amount = st.number_input("Total Amount", min_value=0, value=25000, key="p_ta")
-        paid_amount = st.number_input("Paid Amount", min_value=0, value=10000, key="p_pa")
-    with col3:
-        test_taken = st.selectbox("Test", sorted(df['Test'].dropna().unique()), key="p_tt")
-        followup_email = st.selectbox("Followup Email", sorted(df['Followup Email'].dropna().unique()), key="p_fe")
+        st.markdown(f"**Model Context:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing Matrix:** {format_balance_method(balance_method)}")
 
-    st.markdown('<div class="section-header"><h2>Call Inputs</h2></div>', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            gender_opts = sorted(df['Gender'].dropna().unique())
+            gender = st.selectbox("Gender", gender_opts, index=get_index(gender_opts, pd_state.get('Gender')))
+            course_opts = sorted(df['Course'].dropna().unique())
+            course = st.selectbox("Course", course_opts, index=get_index(course_opts, pd_state.get('Course')))
+            source_opts = sorted(df['Source of lead'].dropna().unique())
+            source = st.selectbox("Source of lead", source_opts, index=get_index(source_opts, pd_state.get('Source of lead')))
+        with col2:
+            stream_opts = sorted(df['Stream'].dropna().unique())
+            stream = st.selectbox("Stream", stream_opts, index=get_index(stream_opts, pd_state.get('Stream')))
+            track_opts = sorted(df['Track Interested'].dropna().unique())
+            track_interested = st.selectbox("Track Interested", track_opts, index=get_index(track_opts, pd_state.get('Track Interested')))
+            mode_opts = sorted(df['Mode of Program Joined'].dropna().unique())
+            mode = st.selectbox("Mode of Program Joined", mode_opts, index=get_index(mode_opts, pd_state.get('Mode of Program Joined')))
+        with col3:
+            edu_opts = sorted(df['Education'].dropna().unique())
+            education = st.selectbox("Education", edu_opts, index=get_index(edu_opts, pd_state.get('Education')))
+            ba_opts = sorted(df['Batch Assigned'].dropna().unique())
+            batch_assigned = st.selectbox("Batch Assigned", ba_opts, index=get_index(ba_opts, pd_state.get('Batch Assigned')))
 
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1:
-        not_interested = st.checkbox("No Interest in Course", value=False, key="p_ni")
-    with sc2:
-        unreachable_not_connected = st.checkbox("No Response / Unreachable", value=False, key="p_ur")
-    with sc3:
-        joined_competitor = st.checkbox("Joined in another institution", value=False, key="p_jc")
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2 = st.columns([4, 1])
+        with c2:
+            if st.button("Next ➡️", type="primary", use_container_width=True):
+                update_data(selected_model_name=selected_model_name, c_email=c_email, Gender=gender, Course=course, **{"Source of lead": source}, Stream=stream, **{"Track Interested": track_interested}, **{"Mode of Program Joined": mode}, Education=education, **{"Batch Assigned": batch_assigned})
+                next_step()
+                st.rerun()
 
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1:
-        financial_issue = st.checkbox("Course fees not affordable", value=False, key="p_fs")
-    with sc2:
-        already_working = st.checkbox("Got placed", value=False, key="p_aw")
-    with sc3:
-        looking_for_job = st.checkbox("Job hunting, not internship", value=False, key="p_lj")
-    with sc4:
-        decision_pending = st.checkbox("Technical Discussion", value=False, key="p_dp")
+    elif st.session_state.predictor_step == 2:
+        st.markdown('<div class="section-header"><h2>Additional & Financial Details</h2></div>', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            city_opts = sorted(df['City'].dropna().unique())
+            city = st.selectbox("City", city_opts, index=get_index(city_opts, pd_state.get('City')))
+            state_opts = sorted(df['Mailing State'].dropna().unique())
+            mailing_state = st.selectbox("Mailing State", state_opts, index=get_index(state_opts, pd_state.get('Mailing State')))
+            country_opts = sorted(df['Mailing Country'].dropna().unique())
+            mailing_country = st.selectbox("Mailing Country", country_opts, index=get_index(country_opts, pd_state.get('Mailing Country')))
+        with col2:
+            inv_opts = sorted(df['Invoice'].dropna().unique())
+            invoice = st.selectbox("Invoice", inv_opts, index=get_index(inv_opts, pd_state.get('Invoice')))
+            loc_opts = sorted(df['Program Location'].dropna().unique())
+            program_location = st.selectbox("Program Location", loc_opts, index=get_index(loc_opts, pd_state.get('Program Location')))
+        with col3:
+            ind_opts = sorted(df['Induction session'].dropna().unique())
+            induction_session = st.selectbox("Induction Session", ind_opts, index=get_index(ind_opts, pd_state.get('Induction session')))
+            fb_opts = sorted(df['Feedback'].dropna().unique())
+            feedback = st.selectbox("Feedback", fb_opts, index=get_index(fb_opts, pd_state.get('Feedback')))
+            pm_opts = sorted(df['Payment_mode'].dropna().unique())
+            payment_mode = st.selectbox("Payment Mode", pm_opts, index=get_index(pm_opts, pd_state.get('Payment_mode')))
 
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000,
-                                    placeholder="Enter recent call remarks or notes...", key="p_remarks")
-    with sc2:
-        call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000,
-                                       placeholder="Paste full call transcript to improve AI churn reason extraction.",
-                                       key="p_transcript")
+        st.markdown('<div class="section-header"><h2>Numerical Records</h2></div>', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            semester = st.number_input("Semester", 0, 10, pd_state.get('Semester', 3))
+            year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050, value=pd_state.get('Year of Graduation', 2026))
+            experience = st.number_input("Experience (years)", 0, 30, pd_state.get('Experience', 3))
+        with col2:
+            total_amount = st.number_input("Total Amount", min_value=0, value=pd_state.get('Total_Amount', 25000))
+            paid_amount = st.number_input("Paid Amount", min_value=0, value=pd_state.get('Paid_amount', 10000))
+        with col3:
+            tt_opts = sorted(df['Test'].dropna().unique())
+            test_taken = st.selectbox("Test", tt_opts, index=get_index(tt_opts, pd_state.get('Test')))
+            fe_opts = sorted(df['Followup Email'].dropna().unique())
+            followup_email = st.selectbox("Followup Email", fe_opts, index=get_index(fe_opts, pd_state.get('Followup Email')))
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1,3,1])
+        with c1:
+            if st.button("⬅️ Back", use_container_width=True):
+                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country}, Invoice=invoice, **{"Program Location": program_location}, **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode, Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience, Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken, **{"Followup Email": followup_email})
+                prev_step()
+                st.rerun()
+        with c3:
+            if st.button("Next ➡️", type="primary", use_container_width=True):
+                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country}, Invoice=invoice, **{"Program Location": program_location}, **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode, Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience, Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken, **{"Followup Email": followup_email})
+                next_step()
+                st.rerun()
 
-    if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
-        derived_paid_rate = (paid_amount / total_amount) if total_amount > 0 else 0.0
+    elif st.session_state.predictor_step == 3:
+        st.markdown('<div class="section-header"><h2>Call Inputs & Prediction</h2></div>', unsafe_allow_html=True)
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            not_interested = st.checkbox("No Interest in Course", value=pd_state.get('not_interested', False))
+        with sc2:
+            unreachable_not_connected = st.checkbox("No Response / Unreachable", value=pd_state.get('unreachable_not_connected', False))
+        with sc3:
+            joined_competitor = st.checkbox("Joined in another institution", value=pd_state.get('joined_competitor', False))
 
-        input_data = {
-            'Semester': semester, 'Year of Graduation': year_of_graduation, 'Experience': experience,
-            'Total_Amount': total_amount, 'Paid_amount': paid_amount, 'Paid_Rate': derived_paid_rate,
-            'Course': course, 'Track Interested': track_interested, 'City': city, 'Mailing State': mailing_state,
-            'Mailing Country': mailing_country, 'Source of lead': source, 'Gender': gender, 'Test': test_taken,
-            'Followup Email': followup_email, 'Invoice': invoice, 'Mode of Program Joined': mode,
-            'Program Location': program_location, 'Education': education, 'Batch Assigned': batch_assigned,
-            'Stream': stream, 'Induction session': induction_session, 'Feedback': feedback,
-            'Payment_mode': payment_mode,
-            'email': c_email
-        }
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        with sc1:
+            financial_issue = st.checkbox("Course fees not affordable", value=pd_state.get('financial_issue', False))
+        with sc2:
+            already_working = st.checkbox("Got placed", value=pd_state.get('already_working', False))
+        with sc3:
+            looking_for_job = st.checkbox("Job hunting, not internship", value=pd_state.get('looking_for_job', False))
+        with sc4:
+            decision_pending = st.checkbox("Technical Discussion", value=pd_state.get('decision_pending', False))
 
-        if not is_llm:
-            model_df_input = input_data.copy()
-            model_df_input['role'] = "professional" if experience > 0 else "student"
-            model_df_input['background'] = "tech" if "tech" in education.lower() else "non tech"
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            call_remarks = st.text_area("Call Remarks (optional)", value=pd_state.get('call_remarks', ""), max_chars=1000, placeholder="Enter recent call remarks...")
+        with sc2:
+            call_transcript = st.text_area("Call Transcript (optional)", value=pd_state.get('call_transcript', ""), max_chars=2000, placeholder="Paste full call transcript...")
 
-            input_df = pd.DataFrame([model_df_input])
-            for col in categorical_features:
-                if col in input_df.columns:
-                    input_df[col] = input_df[col].astype(str)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-            processed_input = preprocessor.transform(input_df)
-            if hasattr(processed_input, 'toarray'):
-                processed_input_df = pd.DataFrame(processed_input.toarray(), columns=feature_columns)
-            else:
-                processed_input_df = pd.DataFrame(processed_input, columns=feature_columns)
-            processed_input_df = processed_input_df.reindex(columns=feature_columns, fill_value=0)
+        c1, c2, c3 = st.columns([1,2,2])
+        with c1:
+            if st.button("⬅️ Back", use_container_width=True):
+                update_data(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected, joined_competitor=joined_competitor, financial_issue=financial_issue, already_working=already_working, looking_for_job=looking_for_job, decision_pending=decision_pending, call_remarks=call_remarks, call_transcript=call_transcript)
+                prev_step()
+                st.rerun()
+        with c3:
+            predict_btn = st.button("Predict Churn Risk 🚀", use_container_width=True, type="primary")
+
+        if predict_btn:
+            pd_state.update(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected, joined_competitor=joined_competitor, financial_issue=financial_issue, already_working=already_working, looking_for_job=looking_for_job, decision_pending=decision_pending, call_remarks=call_remarks, call_transcript=call_transcript)
+
+            total_amount = pd_state.get('Total_Amount', 25000)
+            paid_amount = pd_state.get('Paid_amount', 10000)
+            derived_paid_rate = (paid_amount / total_amount) if total_amount > 0 else 0.0
+            selected_model_name = pd_state.get('selected_model_name', all_options[0])
+            is_llm = selected_model_name in llm_options
+            c_email = pd_state.get('c_email', 'candidate_audit@domain.com')
+            semester = pd_state.get('Semester', 3)
+            year_of_graduation = pd_state.get('Year of Graduation', 2026)
+            experience = pd_state.get('Experience', 3)
+            course = pd_state.get('Course', 'Unknown')
+            track_interested = pd_state.get('Track Interested', 'Unknown')
+            city = pd_state.get('City', 'Unknown')
+            mailing_state = pd_state.get('Mailing State', 'Unknown')
+            mailing_country = pd_state.get('Mailing Country', 'Unknown')
+            source = pd_state.get('Source of lead', 'Unknown')
+            gender = pd_state.get('Gender', 'Unknown')
+            test_taken = pd_state.get('Test', 'Unknown')
+            followup_email = pd_state.get('Followup Email', 'Unknown')
+            invoice = pd_state.get('Invoice', 'Unknown')
+            mode = pd_state.get('Mode of Program Joined', 'Unknown')
+            program_location = pd_state.get('Program Location', 'Unknown')
+            education = pd_state.get('Education', 'Unknown')
+            batch_assigned = pd_state.get('Batch Assigned', 'Unknown')
+            stream = pd_state.get('Stream', 'Unknown')
+            induction_session = pd_state.get('Induction session', 'Unknown')
+            feedback = pd_state.get('Feedback', 'Unknown')
+            payment_mode = pd_state.get('Payment_mode', 'Unknown')
+
+            input_data = {
+                'Semester': semester, 'Year of Graduation': year_of_graduation, 'Experience': experience,
+                'Total_Amount': total_amount, 'Paid_amount': paid_amount, 'Paid_Rate': derived_paid_rate,
+                'Course': course, 'Track Interested': track_interested, 'City': city, 'Mailing State': mailing_state,
+                'Mailing Country': mailing_country, 'Source of lead': source, 'Gender': gender, 'Test': test_taken,
+                'Followup Email': followup_email, 'Invoice': invoice, 'Mode of Program Joined': mode,
+                'Program Location': program_location, 'Education': education, 'Batch Assigned': batch_assigned,
+                'Stream': stream, 'Induction session': induction_session, 'Feedback': feedback,
+                'Payment_mode': payment_mode, 'email': c_email
+            }
+
+            if not is_llm:
+                model_df_input = input_data.copy()
+                model_df_input['role'] = "professional" if experience > 0 else "student"
+                model_df_input['background'] = "tech" if "tech" in education.lower() else "non tech"
+
+                input_df = pd.DataFrame([model_df_input])
+                for col in categorical_features:
+                    if col in input_df.columns:
+                        input_df[col] = input_df[col].astype(str)
+
+                processed_input = preprocessor.transform(input_df)
+                if hasattr(processed_input, 'toarray'):
+                    processed_input_df = pd.DataFrame(processed_input.toarray(), columns=feature_columns)
+                else:
+                    processed_input_df = pd.DataFrame(processed_input, columns=feature_columns)
+                processed_input_df = processed_input_df.reindex(columns=feature_columns, fill_value=0)
+
+                final_model = available_models.get(selected_model_name, available_models.get(list(available_models.keys())[0]))
 
         try:
             if is_llm:
