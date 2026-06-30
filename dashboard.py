@@ -68,7 +68,24 @@ def init_supabase() -> Client:
         return None
     return create_client(url, key)
 
+@st.cache_resource
+def init_supabase_service() -> Client:
+    """Creates a service-role Supabase client that bypasses RLS for unrestricted data reads.
+    Requires SUPABASE_SERVICE_KEY in .env — get it from:
+    Supabase Dashboard -> Project Settings -> API -> service_role secret
+    """
+    try:
+        url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
+        service_key = os.environ.get("SUPABASE_SERVICE_KEY") or st.secrets.get("SUPABASE_SERVICE_KEY", "")
+    except Exception:
+        url = os.environ.get("SUPABASE_URL", "")
+        service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not url or not service_key:
+        return None
+    return create_client(url, service_key)
+
 supabase = init_supabase()
+supabase_service = init_supabase_service()  # None if service key not configured
 
 
 # 2. ADD RISK ANALYSIS HELPER
@@ -698,13 +715,15 @@ def load_data():
 
     # ── Layer 1: Attempt Dynamic Supabase Pull ──
     try:
+        # Use service-role client (bypasses RLS) if available, otherwise fall back to regular client
+        read_client = supabase_service if supabase_service is not None else supabase
         all_records = []
         chunk_size = 1000
         start_row = 0
 
         while True:
-            # 🌟 Pulling rows in ranges (0-999, 1000-1999, etc.) to bypass the 1000 max safety limit
-            response = supabase.table("candidates") \
+            # Pulling rows in ranges (0-999, 1000-1999, etc.) to bypass the 1000 max safety limit
+            response = read_client.table("candidates") \
                 .select("*") \
                 .range(start_row, start_row + chunk_size - 1) \
                 .execute()
@@ -1880,21 +1899,13 @@ def render_candidate_entry_form(df, notes):
 
             # Salesperson mapping lookup
             logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
-            
-            # Map gmail logins to their @rp2.com database equivalents (for RLS alignment)
-            lookup_email = logged_in_email
-            if logged_in_email == "amalkbasheer@gmail.com":
-                lookup_email = "amalkbasheer@rp2.com"
-            elif logged_in_email == "darkeldhose@gmail.com":
-                lookup_email = "darkeldhose@rp2.com"
-
             resolved_owner = None
             try:
                 mapping_res = supabase.table("salesperson_mappings").select("salesperson_email, legacy_label").execute()
                 if mapping_res.data:
                     for row in mapping_res.data:
                         db_email = str(row.get("salesperson_email", "")).strip().lower()
-                        if db_email == lookup_email:
+                        if db_email == logged_in_email:
                             resolved_owner = row.get("legacy_label")
                             break
 
