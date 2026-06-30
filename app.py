@@ -1770,38 +1770,53 @@ def page_live_predictor(df, model_data, churn_full=None):
     st.markdown('<div class="section-header"><h2>Candidate Details</h2></div>', unsafe_allow_html=True)
     st.markdown(f"**Model:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing:** {format_balance_method(balance_method)}")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-user" style="margin-right:8px;"></i> Candidate Demographics</div>', unsafe_allow_html=True)
+    col_dem1, col_dem2 = st.columns(2)
+    with col_dem1:
         source    = st.selectbox("Source",     sorted(df['Source'].unique()), key="p_source")
         education = st.selectbox("Education",  sorted(df['Education'].unique()), key="p_edu")
         background= st.selectbox("Background", sorted(df['Background'].unique()), key="p_bg")
+    with col_dem2:
         role      = st.selectbox("Role",       sorted(df['Role'].unique()), key="p_role")
+        experience     = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
+        career_gap     = st.number_input("Career Gap (years)", 0, 10, 0, key="p_gap")
 
-    with col2:
-        stream    = st.selectbox("Stream",     sorted(df['Stream'].unique()), key="p_stream")
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Enrollment Details</div>', unsafe_allow_html=True)
+    col_enroll1, col_enroll2 = st.columns(2)
+    with col_enroll1:
         course    = st.selectbox("Course",     sorted(df['Course'].unique()), key="p_course")
+        stream    = st.selectbox("Stream",     sorted(df['Stream'].unique()), key="p_stream")
+    with col_enroll2:
         mode      = st.selectbox("Mode",       sorted(df['Mode'].unique()), key="p_mode")
-        pay_method= st.selectbox("Payment Method", sorted(df['Payment_Method'].dropna().unique()), key="p_pm")
-
-    with col3:
         current_status = st.selectbox("Current Status", sorted(df['Current_status'].unique()), key="p_cs")
+
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Financial & Billing Details</div>', unsafe_allow_html=True)
+    col_fin1, col_fin2 = st.columns(2)
+    with col_fin1:
+        pay_method= st.selectbox("Payment Method", sorted(df['Payment_Method'].dropna().unique()), key="p_pm")
+        days_since_payment = st.number_input("Days Since Last Payment", 0, 1000, 60, key="p_dsp")
+    with col_fin2:
+        total_amount   = st.number_input("Total Course Fee (₹)", 10000, 200000, 60000, step=5000, key="p_ta")
+        paid_amount    = st.number_input("Amount Paid (₹)", 2000, 200000, 2000, step=10000, key="p_pa")
+
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Engagement</div>', unsafe_allow_html=True)
+    col_eng1, col_eng2 = st.columns(2)
+    with col_eng1:
         induction_session = st.selectbox(
             "Induction Session",
             sorted(df['Induction_Session'].dropna().unique()) if 'Induction_Session' in df.columns else ['Attended', 'NotAttended'],
             key="p_is"
         )
+    with col_eng2:
         feedback = st.selectbox(
             "Feedback",
             sorted(df['Feedback'].dropna().unique()) if 'Feedback' in df.columns else ['Positive', 'Neutral', 'Negative'],
             key="p_fb"
         )
-        experience     = st.number_input("Experience (years)", 0, 30, 3, key="p_exp")
-        career_gap     = st.number_input("Career Gap (years)", 0, 10, 0, key="p_gap")
-        total_amount   = st.number_input("Total Course Fee (₹)", 10000, 200000, 60000, step=5000, key="p_ta")
-        paid_amount    = st.number_input("Amount Paid (₹)", 2000, 200000, 2000, step=10000, key="p_pa")
 
     st.markdown('<div class="section-header"><h2>Call History Inputs</h2></div>', unsafe_allow_html=True)
 
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-chart-simple" style="margin-right:8px;"></i> Call Metrics</div>', unsafe_allow_html=True)
     cc1, cc2, cc3, cc4 = st.columns(4)
     with cc1:
         total_calls = st.number_input("Total Calls", 0, 5, 1, key="p_tc")
@@ -1843,35 +1858,30 @@ def page_live_predictor(df, model_data, churn_full=None):
 
         exec_exp = st.number_input("Avg Executive Experience (yrs)", 0.0, 10.0, 5.0, step=0.5, key="p_ee")
 
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1:
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-briefcase" style="margin-right:8px;"></i> Executive & Call Signals</div>', unsafe_allow_html=True)
+    col_sig1, col_sig2 = st.columns(2)
+    with col_sig1:
+        exec_team = st.selectbox("Executive Team", sorted(df['Executive_Team'].dropna().unique()) if 'Executive_Team' in df.columns else ['Team A','Team B','Team C','Team D'], key="p_et")
         if total_calls == 0:
             has_interest = st.checkbox("Showed Interest in Calls", value=False, disabled=True, key="p_hi_disabled")
-        else:
-            has_interest = st.checkbox("Showed Interest in Calls", value=True, key="p_hi")
-    with sc2:
-        if total_calls == 0:
             has_no_resp = st.checkbox("No Response / Unreachable", value=False, disabled=True, key="p_hnr_disabled")
         else:
+            has_interest = st.checkbox("Showed Interest in Calls", value=True, key="p_hi")
             has_no_resp = st.checkbox("No Response / Unreachable", value=False, key="p_hnr")
-    with sc3:
+    with col_sig2:
         if total_calls == 0:
             has_payment = st.checkbox("Payment Discussion in Calls", value=False, disabled=True, key="p_hpd_disabled")
-        else:
-            has_payment = st.checkbox("Payment Discussion in Calls", value=False, key="p_hpd")
-    with sc4:
-        if total_calls == 0:
             has_technical = st.checkbox("Technical Discussion", value=False, disabled=True, key="p_htd_disabled")
         else:
+            has_payment = st.checkbox("Payment Discussion in Calls", value=False, key="p_hpd")
             has_technical = st.checkbox("Technical Discussion", value=True, key="p_htd")
 
-    # Free-text call remarks and optional transcript for live inference
-    call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000, placeholder="Enter recent call remarks or notes...", key="p_remarks")
-    call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000, placeholder="Paste full call transcript to improve AI churn reason extraction.", key="p_transcript")
-
-    exec_team = st.selectbox("Executive Team", sorted(df['Executive_Team'].dropna().unique()) if 'Executive_Team' in df.columns else ['Team A','Team B','Team C','Team D'], key="p_et")
-
-    days_since_payment = st.number_input("Days Since Last Payment", 0, 1000, 60, key="p_dsp")
+    st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Call Notes & Remarks</div>', unsafe_allow_html=True)
+    col_rem1, col_rem2 = st.columns(2)
+    with col_rem1:
+        call_remarks = st.text_area("Call Remarks (optional)", value="", max_chars=1000, placeholder="Enter recent call remarks or notes...", key="p_remarks")
+    with col_rem2:
+        call_transcript = st.text_area("Call Transcript (optional)", value="", max_chars=2000, placeholder="Paste full call transcript to improve AI churn reason extraction.", key="p_transcript")
 
     st.markdown('<div class="section-header"><h2>AI Extraction Engine</h2></div>', unsafe_allow_html=True)
     preferred_ai = st.selectbox(
@@ -1882,7 +1892,7 @@ def page_live_predictor(df, model_data, churn_full=None):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("Predict Churn Risk", use_container_width=True, type="primary"):
+    if st.button("Predict Churn Risk", icon=":material/online_prediction:", use_container_width=True, type="primary"):
         payment_ratio = paid_amount / total_amount if total_amount > 0 else 0.0
 
         raw_input = {
