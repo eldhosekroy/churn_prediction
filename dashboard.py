@@ -6,6 +6,7 @@ This file is NEW - it does NOT modify any existing team files.
 It reads: Candidate Profile.csv, Call log.csv, Executive Profile.csv, churn_prediction_model.pkl
 """
 
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -667,46 +668,320 @@ st.markdown("""
 INPUT_DIR = "./data/"
 OUTPUT_DIR = "./output/"
 
+#@st.cache_data(ttl=60)
+#def load_data():
+    # Load the processed dataset with inferred churn and reasons
+#    df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
+#    notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
+    
+#    if os.path.exists(df_path):
+#        df = pd.read_csv(df_path)
+#    else:
+#        df = pd.DataFrame()
+        
+#    if os.path.exists(notes_path):
+#        notes = pd.read_csv(notes_path)
+#    else:
+#        notes = pd.DataFrame()
+        
+#    return df, notes
+
 @st.cache_data(ttl=60)
 def load_data():
-    # Load the processed dataset with inferred churn and reasons
+    """
+    Attempts to read live metrics directly from the Supabase CRM database.
+    If unavailable, it falls back seamlessly to the processed local files
+    so all dashboard widgets continue to operate without breaking variables.
+    """
     df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
     notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
-    
-    if os.path.exists(df_path):
-        df = pd.read_csv(df_path)
-    else:
-        df = pd.DataFrame()
-        
-    if os.path.exists(notes_path):
-        notes = pd.read_csv(notes_path)
-    else:
-        notes = pd.DataFrame()
-        
-    return df, notes
+
+    # ── Layer 1: Attempt Dynamic Supabase Pull ──
+    try:
+        all_records = []
+        chunk_size = 1000
+        start_row = 0
+
+        while True:
+            # 🌟 Pulling rows in ranges (0-999, 1000-1999, etc.) to bypass the 1000 max safety limit
+            response = supabase.table("candidates") \
+                .select("*") \
+                .range(start_row, start_row + chunk_size - 1) \
+                .execute()
+
+            if response.data and len(response.data) > 0:
+                all_records.extend(response.data)
+
+                # If we received fewer records than the chunk size, we have reached the end
+                if len(response.data) < chunk_size:
+                    break
+                start_row += chunk_size
+            else:
+                break
+
+        if len(all_records) > 0:
+            df = pd.DataFrame(all_records)
+
+            # Map Supabase database snake_case names to match your legacy CSV headers exactly
+            rename_mapping = {
+                "candidate_name": "Contact Name",
+                "contact_id": "Contact Id",
+                "email": "Email ID",
+                "contact_phone": "Whatsapp Number",
+                "city": "City",
+                "mailing_state": "Mailing State",
+                "mailing_country": "Mailing Country",
+                "course": "Course",
+                "stream": "Stream",
+                "track_interested": "Track Interested",
+                "batch_assigned": "Batch Assigned",
+                "program_mode": "Mode of Program Joined",
+                "program_location": "Program Location",
+                "induction_session": "Induction session",
+                "background_override": "final_inferred_reason",
+                "csv_contact_owner": "Contact Owner",
+                "Payment_Date": "Payment Date",
+                "Payment_mode": "Payment_mode",
+                "Paid_amount": "Paid Amount",
+                "Total_Amount": "Total_Amount",
+                "Source of Lead": "Source of lead",
+                "Feedback": "Feedback",
+                "Invoice": "Invoice",
+                "Experience": "Experience",
+                "Test": "Test",
+                "Followup Email": "Followup Email"
+            }
+            # Rename columns safely if they exist in the incoming dataframe payload
+            existing_renames = {k: v for k, v in rename_mapping.items() if k in df.columns}
+            if existing_renames:
+                df = df.rename(columns=existing_renames)
+                # Load accompanying notes dataset
+            notes = pd.read_csv(notes_path) if os.path.exists(notes_path) else pd.DataFrame()
+            return df, notes, "database"  # Successfully loaded from database
+
+    except Exception as db_err:
+        pass
+
+        # ── FALLBACK LAYER: Load Local CSV Files ──
+    df = pd.read_csv(df_path) if os.path.exists(df_path) else pd.DataFrame()
+    notes = pd.read_csv(notes_path) if os.path.exists(notes_path) else pd.DataFrame()
+
+    return df, notes, "csv"
 
 @st.cache_data
 def load_churn_reasons():
     # Deprecated/Not needed anymore, returning same df for compatibility
     return None, None
 
-@st.cache_data
-def preprocess(df, notes):
+
     # Data is already preprocessed by churn_data.py.
     # We just ensure certain columns exist to avoid KeyError in UI
-    
-    if not df.empty:
-        df['Contact Name'] = df['Contact Name'].fillna('Unknown')
-        df['Course'] = df['Course'].fillna('Unknown')
-        df['Source of lead'] = df['Source of lead'].fillna('Unknown')
-        df['Mode of Program Joined'] = df['Mode of Program Joined'].fillna('Unknown')
-        df['background'] = df['background'].fillna('Unknown')
-        df['role'] = df['role'].fillna('Unknown')
-        df['Invoice'] = df['Invoice'].fillna('No')
-        
-        # Payment mapping (if needed for legacy UI logic, though we will replace UI)
-        #df['Payment_Ratio'] = np.where(df['Invoice'] == 'Paid', 1.0, 0.0)
-        
+@st.cache_data
+def preprocess(df, notes):
+    """
+    Cleans structural schemas and dynamically derives 'final_inferred_reason',
+    'role', 'background', and 'Status' directly using salesperson note heuristic logic.
+    """
+    if df.empty:
+        return df, notes
+
+    # ── 1. PRE-CLEANING & NUMERIC STANDARD CONVERSIONS ──
+    df['Experience'] = pd.to_numeric(df['Experience'], errors='coerce').fillna(0.0)
+    df['Semester'] = pd.to_numeric(df['Semester'], errors='coerce').fillna(0)
+    df['Year of Graduation'] = pd.to_numeric(df['Year of Graduation'], errors='coerce').fillna(0)
+
+    df['Course'] = df['Course'].fillna('Unknown')
+    df['Invoice'] = df['Invoice'].fillna('No')
+
+    # Locate the target notes entry text area column safely
+    note_col = 'background_override' if 'background_override' in df.columns else 'Background Override Notes'
+    if note_col in df.columns:
+        df[note_col] = df[note_col].fillna('N/A').astype(str).str.strip()
+    else:
+        df[note_col] = ''
+
+    # ── 🛠️ 2. EXTRACT final_inferred_reason VIA KEYWORD MATRIX ──
+    def infer_status_and_reason_from_notes(val_input):
+        if isinstance(val_input, list):
+            sentences_list = [str(s).strip() for s in val_input]
+        else:
+            # Split sentences dynamically by periods, exclamation marks, or newlines
+            sentences_list = [s.strip() for s in re.split(r'[.!\n]+', str(val_input)) if s.strip()]
+
+        full_note_text = ' '.join(sentences_list).lower()
+
+        # Keywords for 'Joined' status - highest precedence
+        joined_keywords = [
+            'enrolled', 'interested', 'paid fees', 'paid the fees', 'will join today', 'joined', 'registered', 'starts program',
+            'course started', 'confirmed admission', 'done payment', 'admission confirmed',
+            'assessment', 'assessment attended', 'joined today', 'start classes', 'class started'
+        ]
+
+        # Not Joined Reasons Keywords
+        competitor_names_list = ['luminar', 'avodha', 'smec', 'liuminar', 'techminds', 'soften', 'techolas', 'lumimar',
+                                 'other institute', 'lum', 'excelr', 'freshers job', 'xlr']
+        completed_phrases_list = ['already done', 'already completed', 'already did', 'aloready completed', 'doing',
+                                  'percuing', 'done with internship']
+
+        # Keywords for "Join Later"
+        join_later_keywords = ['join later', 'will join', 'joining next month', 'joining in', 'joining soon']
+        month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+        # Check for 'Joined' status first
+        for keyword in joined_keywords:
+            if keyword in full_note_text:
+                return 'Joined', 'N/A'
+
+        # --- Join Later Status Logic ---
+        if any(keyword in full_note_text for keyword in join_later_keywords):
+            return 'Join Later', 'N/A'
+
+        for month in month_names:
+            if re.search(r'\b' + month + r'\s+later\b', full_note_text):
+                return 'Join Later', 'N/A'
+
+        # --- Not Joined Reasons Logic ---
+        found_competitor_keyword = any(comp_name in full_note_text for comp_name in competitor_names_list)
+        found_completed_phrase = any(comp_phrase in full_note_text for comp_phrase in completed_phrases_list)
+
+        if found_competitor_keyword and found_completed_phrase:
+            return 'Not Joined', 'Joined Competitor'
+
+        not_joined_reasons = {
+            'Joined Competitor': [
+                'lum', 'luminar', 'avodha', 'excelr', 'smec', 'liuminar', 'techminds', 'soften', 'joined competitor',
+                'other institute', 'lumimar', 'techolas', 'joined competitor'
+                'freshers job'
+            ],
+            'Already Working/Internship': [
+                'already working', 'already job', 'technopark', 'infopark', 'doing job', 'doing internship',
+                'working experience', 'placed', 'joined work', 'already internship done', 'currently working',
+                'working as a', 'current job', 'previous job', 'passed out', 'got job', 'job offer'
+            ],
+            'Looking for Job/Internship (Specific Type)': [
+                'looking for job', 'job only', 'looking for internship', 'internship only',
+                'looking for stipended internship',
+                'looking for stipend', 'looking for stipended', 'free internship', 'only job', 'only internship',
+                'stipend internship', 'paid internship'
+            ],
+            'Not Interested': [
+                'not interested', 'no interest', 'not joining', 'not join', 'not intrested for internship',
+                'not wish to join'
+            ],
+            'Financial Issue': [
+                'fees', 'amount issue', 'money issue', 'expensive', 'cost', 'financial issue', 'fee issue', 'no money',
+                'low salary', 'salary issue'
+            ],
+            'join later': [
+                'not connected', 'unreachable', 'no network', 'switched off', 'rnr', 'wrong number', 'unanswered',
+                'no response', 'unresponsive', 'call later', 'not answering',
+                'not responding', 'dis call', 'not reachable', 'nc', 'busy', 'call not connected', 'disconnected',
+                'switch off', 'incoming calls', 'incoming not', 'junk',
+                'na', 'invalid', 'rejected', 'not respond', 'out of service', 'wrong number', 'incoming',
+                'not connecting', 'voice mail', 'voice issue', 'bc', 'wrong no',
+                'network issue', 'out of network', 'rhr', 'disconnecting', 'blocked', 'r rn', 'rne', 'not attended',
+                'callbusy', 'not ringing', 'discall', 'nr', 'r n r'
+            ],
+            'Decision Pending/Discussing': [
+                'decision pending', 'decission pending', 'thinking', 'will inform', 'call back', 'discuss with family',
+                'discuss with parents', 'will confirm', 'pending decision'
+            ],
+            'Location Issue': [
+                'location issue', 'migrate', 'relocate', 'far away', 'different city', 'distance issue',
+                'shifted location'
+            ],
+            'Time/Schedule Conflict': [
+                'time issue', 'schedule conflict', 'busy', 'clash', 'no time', 'exam time', 'studies'
+            ]
+        }
+
+        for reason, keywords in not_joined_reasons.items():
+            for keyword in keywords:
+                if keyword in full_note_text:
+                    if reason == 'Looking for Job/Internship (Specific Type)' and any(
+                            ni_key in full_note_text for ni_key in ['not interested', 'no interest']):
+                        return 'Not Joined', 'Looking for Other Opportunity (Not Interested)'
+                    return 'Not Joined', reason
+
+        # If it shows active interest/details tracking, map cleanly to N/A (no blocker)
+        if any(x in full_note_text for x in
+               ['interested', 'enquiring', 'waiting', 'more details', 'shared', 'collected']):
+            return 'In-Progress', 'N/A'
+
+        # Absolute uniform fallback zone for undefined inputs
+        return 'Not Joined', 'Other'
+
+    # Extract reason straight out of background_override text
+    df['final_inferred_reason'] = df[note_col].apply(lambda x: infer_status_and_reason_from_notes(x)[1])
+
+    # ── 3. DYNAMIC 'role' DERIVATION ──
+    def assign_role(row):
+        if row['Experience'] > 0:
+            return 'Professional'
+        elif row['Semester'] > 0:
+            return 'Student'
+        elif row['Year of Graduation'] > 0 and row['Experience'] == 0:
+            return 'Idle or Career Gap'
+        return 'Unknown'
+
+    df['role'] = df.apply(assign_role, axis=1)
+
+    # ── 4. DYNAMIC 'background' DERIVATION ──
+    def assign_background(course):
+        if pd.isna(course) or str(course).strip().upper() in ['NOT MENTIONED', 'UNSPECIFIED', 'UNKNOWN', '']:
+            return 'UNKNOWN'
+
+        tech_keywords = [
+            'BTECH', 'BE', 'MTECH', 'BCA', 'MCA', 'B VOC-IT', 'BSC-CS', 'MSC-CS', 'CSE', 'CS', 'IT', 'DA', 'DS', 'BDA',
+            'MSCIT', 'BSCIT', 'MTECHIT', 'MSC-CS-DA', 'BTECH-IT', 'BSC-IT', 'DIPLOMA-IT'
+        ]
+        non_tech_keywords = [
+            'BCOM', 'MCOM', 'BA', 'MBA', 'MA', 'B VOC', 'BSC', 'MSC', 'ENG LIT', 'PLUS TWO', 'DIPLOMA', 'PG',
+            'BSC-NON-IT', 'DIPLOMA-NON-IT', 'GRADUATED', 'OTHERS'
+        ]
+
+        course_upper = str(course).upper()
+        for keyword in tech_keywords:
+            if keyword in course_upper:
+                return 'Tech'
+        for keyword in non_tech_keywords:
+            if keyword in course_upper:
+                return 'Non-Tech'
+
+        if 'TECH' in course_upper or 'SCIENCE' in course_upper or 'ENGINEERING' in course_upper:
+            return 'Tech'
+        elif 'ARTS' in course_upper or 'COMMERCE' in course_upper or 'HUMANITIES' in course_upper:
+            return 'Non-Tech'
+
+        return 'UNKNOWN'
+
+    edu_col = 'Education' if 'Education' in df.columns else 'education'
+    if edu_col in df.columns:
+        df['background'] = df[edu_col].apply(assign_background)
+    else:
+        df['background'] = 'UNKNOWN'
+
+    # ── 5. DYNAMIC TARGET 'Status' MATRIX DERIVATION ──
+    def assign_status(row):
+        inv_val = str(row['Invoice']).strip().lower()
+        reason_val = str(row['final_inferred_reason']).strip()
+
+        is_invoice_yes = inv_val in ['yes', 'Yes']
+        is_reason_na = reason_val in ['N/A', 'n/a', '', 'None', 'nan', 'none']
+
+        if is_invoice_yes and is_reason_na:
+            return 'Joined'
+        elif is_invoice_yes and not is_reason_na:
+            return 'Churned'
+        elif not is_invoice_yes and not is_reason_na:
+            return 'Not joined'
+        elif not is_invoice_yes and is_reason_na:
+            return 'Yet to pay'
+
+
+
+    df['Status'] = df.apply(assign_status, axis=1)
+
     return df, notes
 
 
@@ -904,12 +1179,12 @@ def sidebar():
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Overview"
 
-        # 1. UPDATED NAVIGATION PAGES ARRAY WITH YOUR NEW DASHBOARDS
+        # 1. NAVIGATION PAGES ARRAY WITH YOUR NEW DASHBOARDS
         pages = [
             ("Overview", ":material/dashboard:"),
             ("Candidate Explorer", ":material/search:"),
-            ("Smart Agent Workspace", ":material/assignment_turned_in:"), # Added
-            #("360° Candidate Diagnostics", ":material/account_circle:"), # Added
+            ("Smart Agent Workspace", ":material/assignment_turned_in:"),
+            ("Add New Candidate", ":material/person_add:"), # 🌟 Added New Page Option
             ("CRM Notes Analysis", ":material/call:"),
             ("Invoice Analysis", ":material/payments:"),
             ("Live Predictor", ":material/online_prediction:"),
@@ -958,12 +1233,13 @@ def sidebar():
   <div style="font-size:10px;color:#475569;margin-top:3px;padding-left:28px;">{_meta}</div>
 </div>""", unsafe_allow_html=True)
 
+        # 🌟 UPDATED text to reflect that data can now be modified/added
         st.markdown("""
 <div style="background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.2);
             border-radius:9px;padding:8px 12px;margin-top:4px;overflow:hidden;">
   <span style="font-size:13px;vertical-align:middle;"><i class="fa-solid fa-tools"></i></span>
   <span style="font-size:10px;color:#64748b;vertical-align:middle;margin-left:6px;">
-    <b style="color:#34d399;">Read-only</b> &mdash; no team files modified
+    <b style="color:#34d399;">Interactive Console</b> &mdash; data additions authorized
   </span>
 </div>""", unsafe_allow_html=True)
 
@@ -1493,6 +1769,260 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
                         st.rerun()
                     else:
                         st.error("Transaction Aborted: Target student identifier matrix mapping not found.")
+
+
+
+#
+
+def render_candidate_entry_form(df, notes):
+    # ── Identical Page Header Layout ─────────────────────────────
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-user-plus"></i> Add New Candidate</h1>
+        <p>Manually create and synchronize a fresh candidate profile into the CRM database.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Pure dynamic extractor: No hardcoded fallbacks allowed
+    def get_exact_dataset_options(col_name):
+        if col_name in df.columns:
+            unique_vals = df[col_name].dropna().unique()
+            cleaned = sorted([str(x).strip() for x in unique_vals if str(x).strip() != ''])
+            if cleaned:
+                return cleaned
+        return [""]
+
+    # Extract available course options
+    course_opts = get_exact_dataset_options('Course')
+
+    # ── 🛠️ STEP 1: PLACE COURSE SELECTION OUTSIDE THE FORM FOR LIVE RERUNS ──
+    st.markdown("<div style='margin-bottom: -15px;'></div>", unsafe_allow_html=True)
+    course = st.selectbox("Course Domain Selection (Updates Form Pricing Dynamically) *", course_opts,
+                          key="inp_course_live")
+
+    # ── 🛠️ STEP 2: CALCULATE THE DYNAMIC VALUE ON THE FLY ──
+    default_total_fee = 0.0
+    if 'Course' in df.columns and 'Total_Amount' in df.columns:
+        matched_amounts = df[df['Course'] == course]['Total_Amount'].dropna()
+        if not matched_amounts.empty:
+            try:
+                # Pull the most frequent price recorded (Mode) for this specific course
+                default_total_fee = float(matched_amounts.mode().iloc[0])
+            except Exception:
+                default_total_fee = float(matched_amounts.mean())
+
+    # ── Intake Form ─────────────────────────────────────────────
+    with st.form("candidate_intake_form", clear_on_submit=True):
+
+        # Section 1: Personal & Professional Info
+        st.markdown(
+            '<div class="section-header" style="margin-top:10px;"><h2><i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Personal &amp; Professional Info</h2></div>',
+            unsafe_allow_html=True)
+
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            candidate_name = st.text_input("Name *", placeholder="John Doe", key="inp_name")
+            contact_id = st.text_input("Contact ID *", placeholder="zcrm_XXXX", key="inp_cid")
+        with f2:
+            email = st.text_input("Email *", placeholder="john@example.com", key="inp_email")
+            gender_opts = ['Male', 'Female']
+            gender = st.selectbox("Gender *", gender_opts, key="inp_gender")
+        with f3:
+            contact_phone = st.text_input("Phone *", placeholder=" XXXXX XXXXX", key="inp_phone")
+            experience_years = st.number_input("Work Experience (Years) *", min_value=0.0, max_value=50.0, step=0.5,
+                                               format="%.1f", key="inp_exp_years")
+
+        # Academic Foundations Layout
+        f_edu1, f_edu2, f_edu3 = st.columns(3)
+        with f_edu1:
+            edu_opts = get_exact_dataset_options('Education')
+            education = st.selectbox("Education Background *", edu_opts, key="inp_edu")
+        with f_edu2:
+            yog_opts = get_exact_dataset_options('Year of Graduation')
+            year_of_graduation = st.selectbox("Year of Graduation *", yog_opts, key="inp_yog")
+        with f_edu3:
+            sem_opts = get_exact_dataset_options('Semester')
+            semester = st.selectbox("Current Semester *", sem_opts, key="inp_semester")
+
+        # Section 2: Course & Status Configuration
+        st.markdown(
+            '<div class="section-header"><h2><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Course &amp; Status Parameters</h2></div>',
+            unsafe_allow_html=True)
+
+        f4, f5, f6 = st.columns(3)
+        with f4:
+            # Displays the selected course context information as text inside the form boundary
+            st.info(f"Selected Course: **{course}**")
+
+            stream_opts = get_exact_dataset_options('Stream')
+            stream = st.selectbox("Interested Stream *", stream_opts, key="inp_stream")
+        with f5:
+            track_opts = get_exact_dataset_options('Track Interested')
+            track_interested = st.selectbox("Track Customization *", track_opts, key="inp_track")
+
+            mode_opts = get_exact_dataset_options('Mode of Program Joined')
+            program_mode = st.selectbox("Mode of Program Joined *", mode_opts, key="inp_pmode")
+        with f6:
+            loc_opts = get_exact_dataset_options('Program Location')
+            program_location = st.selectbox("Program Location *", loc_opts, key="inp_ploc")
+
+            feedback_opts = ["Positive", "Negative", "Neutral"]
+            feedback_status = st.selectbox("Candidate Intake Feedback *", feedback_opts, key="inp_feedback_status")
+
+        # Balance layout spacing for induction session & batch assignment
+        f_ind1, f_ind2 = st.columns(2)
+        with f_ind1:
+            ind_opts = get_exact_dataset_options('Induction session')
+            induction_session = st.selectbox("Induction session *", ind_opts, key="inp_induction")
+        with f_ind2:
+            batch_assigned = st.text_input("Batch Assigned *", placeholder="Aug 2026", key="inp_batch")
+
+        # Section 3: Regional Location Coordinates
+        st.markdown(
+            '<div class="section-header"><h2><i class="fa-solid fa-map-location-dot" style="color:#60a5fa; margin-right:8px;"></i> Regional Details</h2></div>',
+            unsafe_allow_html=True)
+
+        f7, f8, f9 = st.columns(3)
+        with f7:
+            city_opts = get_exact_dataset_options('City')
+            city = st.selectbox("City *", city_opts, key="inp_city")
+        with f8:
+            state_opts = get_exact_dataset_options('Mailing State')
+            mailing_state = st.selectbox("State *", state_opts, key="inp_state")
+        with f9:
+            country_opts = get_exact_dataset_options('Mailing Country')
+            mailing_country = st.selectbox("Country *", country_opts, key="inp_country")
+
+        # ── 💸 SECTION 4: Financial Transactions & Lead Origin ──
+        st.markdown(
+            '<div class="section-header"><h2><i class="fa-solid fa-credit-card" style="color:#fbbf24; margin-right:8px;"></i> Financials &amp; Lead Source</h2></div>',
+            unsafe_allow_html=True)
+
+        f_fin1, f_fin2, f_fin3 = st.columns(3)
+        with f_fin1:
+            payment_date = st.date_input("Payment Date", value=None, key="inp_pay_date")
+            pay_mode_opts = get_exact_dataset_options('Payment_mode')
+            payment_mode = st.selectbox("Payment Mode", pay_mode_opts, key="inp_pay_mode")
+        with f_fin2:
+            paid_amount = st.number_input("Paid Amount", min_value=0.0, step=100.0, format="%.2f", key="inp_paid_amt")
+            # 🌟 This field now correctly captures and reflects changes instantaneously!
+            total_amount = st.number_input("Total Amount", min_value=0.0, value=default_total_fee, step=100.0,
+                                           format="%.2f", key="inp_tot_amt")
+        with f_fin3:
+            source_opts = get_exact_dataset_options('Source of lead')
+            source_of_lead = st.selectbox("Source of Lead", source_opts, key="inp_source")
+
+            invoice_status = st.selectbox("Invoice Generated?", ["No", "Yes"], key="inp_invoice")
+
+        # ── 📊 SECTION 5: Verification & Communications ──
+        st.markdown(
+            '<div class="section-header"><h2><i class="fa-solid fa-square-check" style="color:#a78bfa; margin-right:8px;"></i> Verification &amp; Communications</h2></div>',
+            unsafe_allow_html=True)
+
+        chk1, chk2 = st.columns(2)
+        with chk1:
+            test_cleared = st.checkbox("Passed Required Test Engine", value=False, key="inp_test_bool")
+        with chk2:
+            followup_sent = st.checkbox("Sent Initial Followup Email", value=False, key="inp_follow_bool")
+
+        # Section 6: Extra Metadata Notes
+        st.markdown(
+            '<div class="section-header"><h2><i class="fa-solid fa-clipboard" style="color:#f43f5e; margin-right:8px;"></i> Internal Evaluation Data</h2></div>',
+            unsafe_allow_html=True)
+
+        background_override = st.text_area("Feedback / Background Override Notes *",
+                                           placeholder="Add unique profile feedback notes for categorization...",
+                                           key="inp_feedback")
+
+        # Form Action Trigger Button
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        submit_btn = st.form_submit_button("Create Candidate Profile")
+
+        if submit_btn:
+            required_fields = [
+                candidate_name.strip(), contact_id.strip(), email.strip(), contact_phone.strip(),
+                batch_assigned.strip(), background_override.strip()
+            ]
+
+            if any(not field for field in required_fields) or "" in [gender, education, year_of_graduation, semester,
+                                                                     course, stream, program_mode]:
+                st.error("Submission Denied: All text selections and fields must be fully valid and populated.")
+                return
+
+            # ── 1. Cleanly Normalize the Streamlit Email ──
+            logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
+
+            # ── 2. Structural Verification Lookup (Python-Driven) ──
+            resolved_owner = None
+
+            try:
+                mapping_res = supabase.table("salesperson_mappings").select("salesperson_email, legacy_label").execute()
+
+                if mapping_res.data:
+                    for row in mapping_res.data:
+                        db_email = str(row.get("salesperson_email", "")).strip().lower()
+                        if db_email == logged_in_email:
+                            resolved_owner = row.get("legacy_label")
+                            break
+
+                if not resolved_owner:
+                    st.error(
+                        f" Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
+                    return
+                else:
+                    st.toast(f" Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
+
+            except Exception as lookup_err:
+                st.error(f"Mapping Database Communication Interruption: {lookup_err}")
+                return
+
+            # ── 3. Final Multi-Payload Construction ──
+            formatted_payment_date = str(payment_date) if payment_date is not None else None
+
+            candidate_payload = {
+                "candidate_name": candidate_name.strip(),
+                "contact_id": contact_id.strip(),
+                "email": email.strip().lower(),
+                "contact_phone": contact_phone.strip(),
+                "gender": gender,
+                "education": education,
+                "Year of Graduation": year_of_graduation,
+                "Semester": semester,
+                "city": city,
+                "mailing_state": mailing_state,
+                "mailing_country": mailing_country,
+                "course": course,  # Saves the dynamically selected course option
+                "stream": stream,
+                "track_interested": track_interested,
+                "batch_assigned": batch_assigned.strip(),
+                "program_mode": program_mode,
+                "program_location": program_location,
+                "induction_session": induction_session,
+                "background_override": background_override.strip(),
+                "csv_contact_owner": resolved_owner,
+
+                # ── Dynamic Relational Assignments ──
+                "Payment_Date": formatted_payment_date,
+                "Payment_mode": payment_mode if payment_mode != "" else None,
+                "Paid_amount": float(paid_amount),
+                "Total_Amount": float(total_amount),
+                "Source of Lead": source_of_lead if source_of_lead != "" else None,
+
+                # Fields mapped to structured outputs
+                "Feedback": feedback_status,
+                "Invoice": invoice_status,
+                "Experience": str(experience_years),
+                "Test": test_cleared,
+                "Followup Email": followup_sent
+            }
+
+            try:
+                with st.spinner("Synchronizing record with Supabase CRM Database..."):
+                    supabase.table("candidates").insert(candidate_payload).execute()
+                    st.success(
+                        f"Profile for **{candidate_name}** has been successfully generated and linked to {resolved_owner}. :material/check:")
+            except Exception as e:
+                st.error(f"Ingestion Interruption: {e}")
 
 # ─────────────────────────────────────────────
 # PAGE 4 — candidate profile
@@ -2651,7 +3181,6 @@ def page_profile():
 # ==============================================================================
 # MAIN PAGE ROUTER ENGINE
 # ==============================================================================
-
 def main():
     if not st.session_state.get("logged_in", False):
         page_auth()
@@ -2713,7 +3242,20 @@ def main():
     # 5. Storage Loader Process Memory Block
     with st.spinner("Loading data..."):
         try:
-            df, notes = load_data()
+            # 1. Fetch profiles dynamically from Supabase database or local backup tables
+            raw_df, raw_notes, source_type = load_data()
+
+            # 2. Conditionally preprocess only if data originates from the live database
+            if source_type == "database":
+                df, notes = preprocess(raw_df, raw_notes)
+            else:
+                # Skip preprocessing since the CSV is already preprocessed by churn_data.py
+                df, notes = raw_df, raw_notes
+
+            # 3. Securely update state context memory for downstream dashboard files
+            st.session_state['df'] = df
+            st.session_state['notes'] = notes
+
         except Exception as e:
             st.error(f"Could not load data files: {e}")
             st.stop()
@@ -2722,19 +3264,19 @@ def main():
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model()
 
-    # 6. Master Multi-Page Execution Routing Branch (With New Additions)
+    # 6. Master Multi-Page Execution Routing Branch
     if page == "Overview":
         page_overview(df, notes)
     elif page == "Candidate Explorer":
         page_candidate_explorer(df, notes)
 
     elif page == "Smart Agent Workspace":
-        # 🌟 RUNS NEW WORKSPACE CONTAINER (Forms, Real-Time KPIs, Smart Task Reminders)
+        # RUNS NEW WORKSPACE CONTAINER (Forms, Real-Time KPIs, Smart Task Reminders)
         render_agent_workspace_and_logger(supabase, logged_in_user_uuid)
 
-    #elif page == "360° Candidate Diagnostics":
-        # 🌟 RUNS NEW COMPREHENSIVE TIMELINE DIAGNOSTIC HUB
-    #    render_360_student_analytics_hub(supabase)
+    elif page == "Add New Candidate":
+        # 🌟 ROUTE TO THE INTAKE FORM (Passes Supabase connection context safely)
+        render_candidate_entry_form(df, notes)
 
     elif page == "CRM Notes Analysis":
         page_notes_analysis(df, notes)
@@ -2747,3 +3289,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

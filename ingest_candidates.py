@@ -36,23 +36,32 @@ def import_crm_leads_pipeline(file_path: str):
             'City': 'city', 'Mailing State': 'mailing_state', 'Mailing Country': 'mailing_country',
             'Course': 'course', 'Track Interested': 'track_interested', 'Batch Assigned': 'batch_assigned',
             'Mode of Program Joined': 'program_mode', 'Program Location': 'program_location',
-            'Induction session': 'induction_session', 'Feedback': 'interest_level', 'final_inferred_reason': 'background_override',
-            'Contact Owner': 'csv_contact_owner'
+            'Induction session': 'induction_session', 'final_inferred_reason': 'background_override',
+            'Contact Owner': 'csv_contact_owner', 'Year of Graduation': 'Year of Graduation', 'Semester': 'Semester',
+            'Paid_amount': 'Paid_amount', 'Total_Amount': 'Total_Amount', 'Payment_mode': 'Payment_mode',
+            'Payment_Date': 'Payment_Date', 'Invoice': 'Invoice', 'Test': 'Test', 'Followup Email': 'Followup Email',
+            'Experience': 'Experience', 'Source of lead': 'Source of Lead', 'Feedback': 'Feedback'
         }
         df = df.rename(columns={k: v for k, v in mapping_dict.items() if k in df.columns})
         df = df.dropna(subset=['email', 'candidate_name']).replace({np.nan: None})
 
+        if 'Payment_Date' in df.columns:
+            # Parse dates flexibly (handles DD-MM-YYYY, YYYY-MM-DD, etc.) and format to standard ISO strings
+            df['Payment_Date'] = pd.to_datetime(df['Payment_Date'], errors='coerce', dayfirst=True)
+            df['Payment_Date'] = df['Payment_Date'].dt.strftime('%Y-%m-%d')
+
+            # Replace NaN values with safe database None types
+        df = df.replace({np.nan: None})
+
         # Sanitize interest level tags
-        if 'interest_level' in df.columns:
-            df['interest_level'] = df['interest_level'].astype(str).str.lower().str.strip()
-            df['interest_level'] = df['interest_level'].apply(
-                lambda x: x if x in ['high', 'medium', 'low'] else 'medium')
 
         schema_cols = [
             'candidate_name', 'contact_id', 'email', 'contact_phone', 'gender',
             'education', 'stream', 'background_override', 'city', 'mailing_state',
             'mailing_country', 'course', 'track_interested', 'batch_assigned',
-            'program_mode', 'program_location', 'induction_session', 'interest_level','csv_contact_owner'
+            'program_mode', 'program_location', 'induction_session','csv_contact_owner',
+            'Year of Graduation', 'Semester', 'Paid_amount', 'Total_Amount', 'Payment_Date', 'Payment_mode',
+            'Invoice', 'Feedback', 'Test', 'Followup Email', 'Experience', 'Source of Lead'
         ]
         records = df[[c for c in df.columns if c in schema_cols]].to_dict(orient='records')
 
