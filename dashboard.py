@@ -778,149 +778,35 @@ def load_churn_reasons():
 
     # Data is already preprocessed by churn_data.py.
     # We just ensure certain columns exist to avoid KeyError in UI
+
+
 @st.cache_data
 def preprocess(df, notes):
     """
-    Cleans structural schemas and dynamically derives 'final_inferred_reason',
-    'role', 'background', and 'Status' directly using salesperson note heuristic logic.
+    Cleans structural schemas and renames 'background_override' directly to
+    'final_inferred_reason' while handling data types and filling nulls with 'N/A'.
     """
     if df.empty:
         return df, notes
 
     # ── 1. PRE-CLEANING & NUMERIC STANDARD CONVERSIONS ──
     df['Experience'] = pd.to_numeric(df['Experience'], errors='coerce').fillna(0.0)
-    df['Semester'] = pd.to_numeric(df['Semester'], errors='coerce').fillna(0)
-    df['Year of Graduation'] = pd.to_numeric(df['Year of Graduation'], errors='coerce').fillna(0)
+    df['Semester'] = pd.to_numeric(df['Semester'], errors='coerce').fillna(0).astype(int)
+    df['Year of Graduation'] = pd.to_numeric(df['Year of Graduation'], errors='coerce').fillna(0).astype(int)
 
     df['Course'] = df['Course'].fillna('Unknown')
     df['Invoice'] = df['Invoice'].fillna('No')
 
-    # Locate the target notes entry text area column safely
-    note_col = 'background_override' if 'background_override' in df.columns else 'Background Override Notes'
+    # ── 🌟 TROUBLESHOOTING FIX: RENAME, TYPECAST & FILL NULL VALUES ──
+    df['final_inferred_reason'] = df['final_inferred_reason'].fillna('N/A')
+        # 2. Rename directly to 'final_inferred_reason' for your charts/analysis pages
+    #df = df.rename(columns={'background_override': 'final_inferred_reason'})
 
-    if note_col in df.columns:
-        # 🌟 THE FIX: Convert Database NULLs/None directly to 'N/A' to match your CSV logic exactly
-        df[note_col] = df[note_col].fillna('N/A').astype(str).str.strip()
-        # If the database string literal is empty, treat it as 'N/A'
-        df[note_col] = df[note_col].apply(lambda x: 'N/A' if x == '' or x.lower() == 'none' else x)
-    else:
-        df[note_col] = 'N/A'
 
-    # ── 🛠️ 2. EXTRACT final_inferred_reason VIA KEYWORD MATRIX ──
-    def infer_status_and_reason_from_notes(val_input):
-        if isinstance(val_input, list):
-            sentences_list = [str(s).strip() for s in val_input]
-        else:
-            # Split sentences dynamically by periods, exclamation marks, or newlines
-            sentences_list = [s.strip() for s in re.split(r'[.!\n]+', str(val_input)) if s.strip()]
+    # Ensure it is explicitly typed as object/string in the pandas schema
+    #df['final_inferred_reason'] = df['final_inferred_reason'].astype(str)
 
-        full_note_text = ' '.join(sentences_list).lower()
-
-        # Keywords for 'Joined' status - highest precedence
-        joined_keywords = [
-            'enrolled', 'interested', 'paid fees', 'paid the fees', 'will join today', 'joined', 'registered', 'starts program',
-            'course started', 'confirmed admission', 'done payment', 'admission confirmed',
-            'assessment', 'assessment attended', 'joined today', 'start classes', 'class started'
-        ]
-
-        # Not Joined Reasons Keywords
-        competitor_names_list = ['luminar', 'avodha', 'smec', 'liuminar', 'techminds', 'soften', 'techolas', 'lumimar',
-                                 'other institute', 'lum', 'excelr', 'freshers job', 'xlr']
-        completed_phrases_list = ['already done', 'already completed', 'already did', 'aloready completed', 'doing',
-                                  'percuing', 'done with internship']
-
-        # Keywords for "Join Later"
-        join_later_keywords = ['join later', 'will join', 'joining next month', 'joining in', 'joining soon']
-        month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-
-        # Check for 'Joined' status first
-        for keyword in joined_keywords:
-            if keyword in full_note_text:
-                return 'Joined', 'N/A'
-
-        # --- Join Later Status Logic ---
-        if any(keyword in full_note_text for keyword in join_later_keywords):
-            return 'Join Later', 'N/A'
-
-        for month in month_names:
-            if re.search(r'\b' + month + r'\s+later\b', full_note_text):
-                return 'Join Later', 'N/A'
-
-        # --- Not Joined Reasons Logic ---
-        found_competitor_keyword = any(comp_name in full_note_text for comp_name in competitor_names_list)
-        found_completed_phrase = any(comp_phrase in full_note_text for comp_phrase in completed_phrases_list)
-
-        if found_competitor_keyword and found_completed_phrase:
-            return 'Not Joined', 'Joined Competitor'
-
-        not_joined_reasons = {
-            'Joined Competitor': [
-                'lum', 'luminar', 'avodha', 'excelr', 'smec', 'liuminar', 'techminds', 'soften', 'joined competitor',
-                'other institute', 'lumimar', 'techolas', 'joined competitor'
-                'freshers job'
-            ],
-            'Already Working/Internship': [
-                'already working', 'already job', 'technopark', 'infopark', 'doing job', 'doing internship',
-                'working experience', 'placed', 'joined work', 'already internship done', 'currently working',
-                'working as a', 'current job', 'previous job', 'passed out', 'got job', 'job offer'
-            ],
-            'Looking for Job/Internship (Specific Type)': [
-                'looking for job', 'job only', 'looking for internship', 'internship only',
-                'looking for stipended internship',
-                'looking for stipend', 'looking for stipended', 'free internship', 'only job', 'only internship',
-                'stipend internship', 'paid internship'
-            ],
-            'Not Interested': [
-                'not interested', 'no interest', 'not joining', 'not join', 'not intrested for internship',
-                'not wish to join'
-            ],
-            'Financial Issue': [
-                'fees', 'amount issue', 'money issue', 'expensive', 'cost', 'financial issue', 'fee issue', 'no money',
-                'low salary', 'salary issue'
-            ],
-            'join later': [
-                'not connected', 'unreachable', 'no network', 'switched off', 'rnr', 'wrong number', 'unanswered',
-                'no response', 'unresponsive', 'call later', 'not answering',
-                'not responding', 'dis call', 'not reachable', 'nc', 'busy', 'call not connected', 'disconnected',
-                'switch off', 'incoming calls', 'incoming not', 'junk',
-                'na', 'invalid', 'rejected', 'not respond', 'out of service', 'wrong number', 'incoming',
-                'not connecting', 'voice mail', 'voice issue', 'bc', 'wrong no',
-                'network issue', 'out of network', 'rhr', 'disconnecting', 'blocked', 'r rn', 'rne', 'not attended',
-                'callbusy', 'not ringing', 'discall', 'nr', 'r n r'
-            ],
-            'Decision Pending/Discussing': [
-                'decision pending', 'decission pending', 'thinking', 'will inform', 'call back', 'discuss with family',
-                'discuss with parents', 'will confirm', 'pending decision'
-            ],
-            'Location Issue': [
-                'location issue', 'migrate', 'relocate', 'far away', 'different city', 'distance issue',
-                'shifted location'
-            ],
-            'Time/Schedule Conflict': [
-                'time issue', 'schedule conflict', 'busy', 'clash', 'no time', 'exam time', 'studies'
-            ]
-        }
-
-        for reason, keywords in not_joined_reasons.items():
-            for keyword in keywords:
-                if keyword in full_note_text:
-                    if reason == 'Looking for Job/Internship (Specific Type)' and any(
-                            ni_key in full_note_text for ni_key in ['not interested', 'no interest']):
-                        return 'Not Joined', 'Looking for Other Opportunity (Not Interested)'
-                    return 'Not Joined', reason
-
-        # If it shows active interest/details tracking, map cleanly to N/A (no blocker)
-        if any(x in full_note_text for x in
-               ['interested', 'enquiring', 'waiting', 'more details', 'shared', 'collected']):
-            return 'In-Progress', 'N/A'
-
-        # Absolute uniform fallback zone for undefined inputs
-        return 'Not Joined', 'Other'
-
-    # Extract reason straight out of background_override text
-    df['final_inferred_reason'] = df[note_col].apply(lambda x: infer_status_and_reason_from_notes(x)[1])
-
-    # ── 3. DYNAMIC 'role' DERIVATION ──
+    # ── 2. DYNAMIC 'role' DERIVATION ──
     def assign_role(row):
         if row['Experience'] > 0:
             return 'Professional'
@@ -932,7 +818,7 @@ def preprocess(df, notes):
 
     df['role'] = df.apply(assign_role, axis=1)
 
-    # ── 4. DYNAMIC 'background' DERIVATION ──
+    # ── 3. DYNAMIC 'background' DERIVATION FROM EDUCATION ──
     def assign_background(course):
         if pd.isna(course) or str(course).strip().upper() in ['NOT MENTIONED', 'UNSPECIFIED', 'UNKNOWN', '']:
             return 'UNKNOWN'
@@ -967,12 +853,12 @@ def preprocess(df, notes):
     else:
         df['background'] = 'UNKNOWN'
 
-    # ── 5. DYNAMIC TARGET 'Status' MATRIX DERIVATION ──
+    # ── 4. DYNAMIC TARGET 'Status' MATRIX DERIVATION ──
     def assign_status(row):
         inv_val = str(row['Invoice']).strip().lower()
         reason_val = str(row['final_inferred_reason']).strip()
 
-        is_invoice_yes = inv_val in ['yes', 'Yes']
+        is_invoice_yes = inv_val in ['yes', 'paid']
         is_reason_na = reason_val in ['N/A', 'n/a', '', 'None', 'nan', 'none']
 
         if is_invoice_yes and is_reason_na:
@@ -984,7 +870,7 @@ def preprocess(df, notes):
         elif not is_invoice_yes and is_reason_na:
             return 'Yet to pay'
 
-
+        return 'Yet to pay'
 
     df['Status'] = df.apply(assign_status, axis=1)
 
