@@ -703,35 +703,36 @@ OUTPUT_DIR = "./output/"
         
 #    return df, notes
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=2)
 def load_data():
-    """
-    Attempts to read live metrics directly from the Supabase CRM database.
-    If unavailable, it falls back seamlessly to the processed local files
-    so all dashboard widgets continue to operate without breaking variables.
-    """
     df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
     notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
 
-    # ── Layer 1: Attempt Dynamic Supabase Pull ──
+    # ── Layer 1: Attempt Absolute Admin Supabase Pull ──
     try:
-        # Use service-role client (bypasses RLS) if available, otherwise fall back to regular client
-        read_client = supabase_service if supabase_service is not None else supabase
+        # 🌟 FORCE BEYOND RLS: Explicitly use the admin service-role key client.
+        # If your keys are bound to 'supabase_service', use it directly to ignore security walls.
+        if supabase_service is not None:
+            read_client = supabase_service
+        else:
+            # If the service key variable name differs in your main initialization block,
+            # force-assign it here or fallback visibly.
+            read_client = supabase
+
         all_records = []
         chunk_size = 1000
         start_row = 0
 
         while True:
-            # Pulling rows in ranges (0-999, 1000-1999, etc.) to bypass the 1000 max safety limit
+            # We enforce ordering to guarantee zero row-drifting over chunks
             response = read_client.table("candidates") \
                 .select("*") \
+                .order("id", desc=False) \
                 .range(start_row, start_row + chunk_size - 1) \
                 .execute()
 
             if response.data and len(response.data) > 0:
                 all_records.extend(response.data)
-
-                # If we received fewer records than the chunk size, we have reached the end
                 if len(response.data) < chunk_size:
                     break
                 start_row += chunk_size
@@ -741,7 +742,7 @@ def load_data():
         if len(all_records) > 0:
             df = pd.DataFrame(all_records)
 
-            # Map Supabase database snake_case names to match your legacy CSV headers exactly
+            # (Keep your existing rename_mapping block exactly as it is...)
             rename_mapping = {
                 "candidate_name": "Contact Name",
                 "contact_id": "Contact Id",
@@ -770,22 +771,22 @@ def load_data():
                 "gender": "Gender",
                 "education": "Education"
             }
-            # Rename columns safely if they exist in the incoming dataframe payload
             existing_renames = {k: v for k, v in rename_mapping.items() if k in df.columns}
             if existing_renames:
                 df = df.rename(columns=existing_renames)
-                # Load accompanying notes dataset
+
             notes = pd.read_csv(notes_path) if os.path.exists(notes_path) else pd.DataFrame()
-            return df, notes, "database"  # Successfully loaded from database
+            return df, notes, "database"
 
     except Exception as db_err:
-        pass
+        st.error(f"Database extraction pipeline interruption details: {db_err}")
 
-        # ── FALLBACK LAYER: Load Local CSV Files ──
+    # ── FALLBACK LAYER: Load Local CSV Files ──
     df = pd.read_csv(df_path) if os.path.exists(df_path) else pd.DataFrame()
     notes = pd.read_csv(notes_path) if os.path.exists(notes_path) else pd.DataFrame()
 
     return df, notes, "csv"
+
 
 @st.cache_data
 def load_churn_reasons():
@@ -1899,11 +1900,16 @@ def render_candidate_entry_form(df, notes):
                 st.error("Submission Denied: All required fields must be fully valid and populated.")
                 return
 
-            # Salesperson mapping lookup
+                # ── 1. Cleanly Normalize the Streamlit Email ──
             logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
+
+                # ── 2. Structural Verification Lookup (Python-Driven) ──
             resolved_owner = None
+
             try:
-                mapping_res = supabase.table("salesperson_mappings").select("salesperson_email, legacy_label").execute()
+                mapping_res = supabase.table("salesperson_mappings").select(
+                        "salesperson_email, legacy_label").execute()
+
                 if mapping_res.data:
                     for row in mapping_res.data:
                         db_email = str(row.get("salesperson_email", "")).strip().lower()
@@ -1912,10 +1918,12 @@ def render_candidate_entry_form(df, notes):
                             break
 
                 if not resolved_owner:
-                    st.error(f"Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
+                    st.error(
+                            f" Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
                     return
                 else:
-                    st.toast(f"Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
+                    st.toast(f" Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
+
             except Exception as lookup_err:
                 st.error(f"Mapping Database Communication Interruption: {lookup_err}")
                 return
