@@ -1,0 +1,31 @@
+# Call Analyzer Pro - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core framework
+streamlit
+
+# For future audio processing integration
+# pydub>=0.25.1
+# openai>=1.3.0
+# google-cloud-speech>=2.21.0
+
+# For language detection (optional)
+# langdetect>=1.0.9
+
+# For text processing
+ nltk
+
+# For advanced keyword extraction (optional)
+# scikit-learn>=1.3.0
+
+# For translation API integration (optional)
+deep-translator
+googletrans
+argostranslate
+
+
+# For display enhancements
+# streamlit-extras>=0.1.0
+
+# Development
+pytest
