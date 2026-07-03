@@ -3,8 +3,8 @@ openpyxl
 markdown
 pandas
 numpy
-scikit-learn
-xgboost
+scikit-learn==1.8.0
+xgboost==3.2.0
 streamlit
 joblib
 plotly
