@@ -164,7 +164,7 @@ def log_crm_call_interaction(
             "call_duration": int(duration_sec),
             "call_agent": agent_name,                # Passes the resolved label text
             "call_direction": direction.lower().strip(),
-            "outcomes": outcomes_list if outcomes_list else [],
+            "outcomes": outcomes_list,
             "remark_category": remark_cat if remark_cat else None,
             "transcript_summary": summary_text,
             "sentiment_score": float(sentiment_score),
@@ -187,10 +187,6 @@ def log_crm_call_interaction(
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 def live_groq_pipeline(text, api_key):
-    """
-    Connects to Groq via REST API. Translates from Malayalam
-    and returns just the summary in JSON format.
-    """
     if not text.strip():
         return None
 
@@ -200,24 +196,34 @@ def live_groq_pipeline(text, api_key):
         "Content-Type": "application/json"
     }
 
-    # Cleaned prompt strictly requesting only the translation processing -> final summary
+    allowed_outcomes = [
+        "not_interested", "unreachable", "joined_competitor",
+        "financial_issue", "already_working", "looking_for_job",
+        "decision_pending", "converted"
+    ]
+
     prompt = f"""
     You are an expert recruitment call analyzer. Analyze this transcript content: "{text}"
 
     Perform the following tasks:
     1. Translate the text into clear English if it's in Malayalam.
     2. Write a 1-2 sentence Summary indicating if the candidate will join or not, extracting the primary reason for churn if they decline.
+    3. Categorize the overall call into exactly ONE of these allowed database outcome tags: {allowed_outcomes}
 
     Return your output strictly in this JSON layout:
     {{
-        "summary": "1-2 sentence final verdict summary goes here"
+        "summary": "1-2 sentence final verdict summary goes here",
+        "call_outcome": "one_of_the_allowed_tags_here"
     }}
     """
 
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": [
-            {"role": "system", "content": "You are a precise data extractor that outputs short, clean sentences strictly in JSON format."},
+            {
+                "role": "system",
+                "content": f"You are a precise data extractor. You must output strictly in JSON format. The 'call_outcome' key MUST match one of these tokens exactly: {allowed_outcomes}."
+            },
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
@@ -1801,39 +1807,44 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
 
             if "current_summary" not in st.session_state:
                 st.session_state["current_summary"] = ""
+            # This will quietly hold onto the Enum string behind the scenes
+            if "hidden_outcome" not in st.session_state:
+                st.session_state["hidden_outcome"] = ""
             if "previous_text" not in st.session_state:
                 st.session_state["previous_text"] = ""
 
-            # 1. User Inputs Transcript
+            # 1. User inputs transcript
             transcript_text = st.text_area(
                 "Full Audio Call Transcription",
-                placeholder="Paste conversation transcription details here (Malayalam supported)...",
+                placeholder="Paste conversation transcription details here...",
                 height=200
             )
 
-            # 2. Watch for Paste Event (Triggers only when content changes)
+            # Watch for Paste Event (Auto-generates summary and outcome)
             if transcript_text.strip() and transcript_text != st.session_state["previous_text"]:
                 if not GROQ_API_KEY:
                     st.error("Missing GROQ_API_KEY in your local .env configuration.")
                 else:
-                    with st.spinner("Processing Malayalam text & extracting summary..."):
+                    with st.spinner("Processing Malayalam text..."):
                         result = live_groq_pipeline(transcript_text, GROQ_API_KEY)
-                        if result and "summary" in result:
-                            st.session_state["current_summary"] = result["summary"]
+                        if result:
+                            st.session_state["current_summary"] = result.get("summary", "")
+                            st.session_state["hidden_outcome"] = result.get("call_outcome", "")
                             st.session_state["previous_text"] = transcript_text
                             st.rerun()
 
-            # Reset if user clears the text area manually
+            # Reset state if text box is cleared
             if not transcript_text.strip() and st.session_state["current_summary"]:
                 st.session_state["current_summary"] = ""
+                st.session_state["hidden_outcome"] = ""
                 st.session_state["previous_text"] = ""
                 st.rerun()
 
-            # 3. Dynamic Summary Display
+            # 2. Display Generated Summary (The user can read/edit this if necessary)
             remarks_text = st.text_area(
                 "Transcription Summary",
                 value=st.session_state["current_summary"],
-                placeholder="Summary will auto-generate here once transcript is pasted...",
+                placeholder="Summary will auto-generate here...",
                 height=100
             )
 
@@ -1891,6 +1902,7 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
                             agent_name=legacy_agent_label,
                             owner_id=active_owner_uuid,  # <-- Pass the real Auth UUID here!
                             direction=direction,
+                            outcomes_list=[st.session_state["hidden_outcome"]],
                             remark_cat=remark_cat,
                             summary_text=remarks_text[:200] if remarks_text else "No summary provided.",
                             interest=interest,
