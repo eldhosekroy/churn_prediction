@@ -80,8 +80,17 @@ def init_supabase_service() -> Client:
     except Exception:
         url = os.environ.get("SUPABASE_URL", "")
         service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
-    if not url or not service_key:
-        return None
+        # 3. Crash early with a helpful explanation if strings are missing
+        if not url:
+            raise ValueError("Initialization Failed: 'SUPABASE_URL' could not be resolved from secrets or environment.")
+        if not service_key:
+            raise ValueError(
+                "Initialization Failed: 'SUPABASE_SERVICE_ROLE_KEY' could not be resolved from secrets or environment.")
+
+        try:
+            return create_client(url, service_key)
+        except Exception as init_err:
+            raise RuntimeError(f"Failed to establish Supabase client connection: {init_err}")
     return create_client(url, service_key)
 
 supabase = init_supabase()
@@ -113,6 +122,69 @@ def identify_risk_factors(input_data: dict) -> dict:
     return risk_factors if risk_factors else {"general_risk": True}
 
 
+def log_crm_call_interaction(
+    email: str, duration_sec: int, agent_name: str, direction: str,
+    transcript_text: str, owner_id: str, remarks_text: str = None, remark_cat: str = None,
+    outcomes_list: list = None, summary_text: str = None, interest: str = "medium",
+    key_topics_list: list = None, followup_req: bool = False,
+    next_followup_str: str = None, priority: str = None
+    ):
+    """Resolves transactional key bindings and writes communication history logs."""
+
+
+    try:
+        # A. Resolve mandatory candidate_id (UUID) via email tracking keys
+        candidate_query = supabase_service.table("candidates").select("id").eq("email", email).limit(1).execute()
+        if not candidate_query.data:
+            raise ValueError(f"No candidate record found matching email: '{email}'")
+
+        candidate_uuid = candidate_query.data[0]["id"]
+
+        # B. Grab latest prediction reference string if available
+        prediction_uuid = None
+        pred_query = supabase_service.table("predictions").select("id").eq("email", email).order("predicted_at", desc=True).limit(1).execute()
+        if pred_query.data:
+            prediction_uuid = pred_query.data[0]["id"]
+
+        # C. Text analytics sentiment calculation
+        if transcript_text:
+            joy_words = ['interested', 'excited', 'yes', 'perfect', 'join', 'good', 'agree']
+            sad_words = ['expensive', 'cancel', 'no', 'busy', 'unable', 'drop', 'bad']
+            lower_text = transcript_text.lower()
+            pos = sum(1 for w in joy_words if w in lower_text)
+            neg = sum(1 for w in sad_words if w in lower_text)
+            sentiment_score = round((pos - neg) / (pos + neg), 2) if (pos + neg) > 0 else 0.0
+        else:
+            sentiment_score = 0.0
+
+        # D. Assemble call interaction configuration block
+        call_payload = {
+            "candidate_id": candidate_uuid,
+            "prediction_id": prediction_uuid,
+            "owner_id": owner_id,                    # <-- FIX: Added mapping directly here
+            "call_duration": int(duration_sec),
+            "call_agent": agent_name,                # Passes the resolved label text
+            "call_direction": direction.lower().strip(),
+            "outcomes": outcomes_list if outcomes_list else [],
+            "remark_category": remark_cat if remark_cat else None,
+            "transcript": transcript_text,
+            "transcript_summary": summary_text,
+            "sentiment_score": float(sentiment_score),
+            "interest_level": interest.lower().strip(),
+            "followup_required": bool(followup_req),
+            "next_followup_date": next_followup_str if followup_req else None,
+            "followup_priority": priority.lower().strip() if (followup_req and priority) else None
+        }
+
+        supabase_service.table("calls").insert(call_payload).execute()
+        return True, "Success"
+
+    except ValueError as val_err:
+        print(f"Validation Error: {val_err}")
+        return False, str(val_err)
+    except Exception as db_err:
+        print(f"Call logging exception: {db_err}")
+        return False, f"Database error: {db_err}"
 
 def parse_gemini_response(response_data):
     if not isinstance(response_data, dict):
@@ -1549,7 +1621,7 @@ def page_candidate_explorer(df, notes):
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# PAGE 3 — Call log
+## PAGE 3 — Call log
 # ─────────────────────────────────────────────
 
 def render_agent_workspace_and_logger(supabase, owner_uuid):
@@ -1564,8 +1636,9 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
+    current_user_email = st.session_state.get("user_email")
 
+    # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
     try:
         rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": owner_uuid}).execute()
         if rpc_stats.data:
@@ -1643,25 +1716,22 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
             col1, col2 = st.columns(2)
             with col1:
                 c_email = st.text_input("Candidate Target Email Reference", placeholder="student@example.com")
-                direction = st.selectbox("Interaction Direction", ["Outbound", "Inbound"])
                 duration_sec = st.number_input("Call Duration Metrics (Seconds)", min_value=0, value=60, step=10)
                 interest = st.selectbox("Inferred Interest Level", ["High", "Medium", "Low"], index=1)
+                f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1)
+
             with col2:
-                remark_cat = st.selectbox("Classification Category",
-                                          ["General Inquiry", "Batch Allocation Query", "Pricing & Scholarship Options",
-                                           "Technical Support"])
-                outcomes = st.multiselect("Interaction Outcomes",
-                                          ["Answered", "Interested", "Follow-up Scheduled", "Busy / Callback Requested",
-                                           "Not Interested"])
+                direction = st.selectbox("Interaction Direction", ["outbound", "inbound"])
+                remark_cat = st.selectbox("Call_remark",
+                                          ['positive', 'negative', 'neutral', 'follow_up_required', 'resolved', 'callback_requested', 'not_interested', 'pricing_concern', 'time_constraint', 'need_more_info'])
 
                 # Nested layout control settings
-                f_req = st.checkbox("Toggle Future Outreach Flag?", value=False)
-                f_date = st.date_input("Outreach Followup Window Target", min_value=datetime.today())
-                f_pri = st.selectbox("Task Escalation Priority", ["low", "medium", "high", "urgent"], index=1)
+                f_req = st.checkbox("Future Followup Required?", value=False)
+                f_date = st.date_input("Next Followup Date", min_value=datetime.today())
 
-            transcript_text = st.text_area("Full Audio Transcript Transcription Matrix / Core Logging Strings",
-                                           placeholder="Paste conversation transcript block details here...")
-            remarks_text = st.text_area("Executive Summary Notes", placeholder="Provide high-level takeaways...")
+            transcript_text = st.text_area("Full Audio Call Transcription",
+                                           placeholder="Paste conversation transcription details here...")
+            remarks_text = st.text_area("Transcription Summary", placeholder="Provide high-level takeaways...")
 
             st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
             if st.form_submit_button("Commit Log Ingestion", type="primary", use_container_width=True):
@@ -1669,24 +1739,67 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
                     st.error("Please specify a target email identity mapping reference.")
                 else:
                     f_date_str = f_date.strftime("%Y-%m-%d") if f_req else None
-                    success = log_crm_call_interaction(
-                        email=c_email.strip(), duration_sec=int(duration_sec), agent_name="Dashboard Agent",
-                        direction=direction,
-                        transcript_text=transcript_text, remarks_text=remarks_text, remark_cat=remark_cat,
-                        outcomes_list=outcomes,
-                        summary_text=remarks_text[:200] if remarks_text else "No summary provided.", interest=interest,
-                        followup_req=f_req,
-                        next_followup_str=f_date_str, priority=f_pri
-                    )
-                    if success:
-                        st.success("Interaction touchpoint committed directly to transactional registries.")
-                        st.rerun()
+
+                    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
+                    active_owner_uuid = None
+                    try:
+                        # Fetch users from Supabase Auth admin panel
+                        auth_response = supabase_service.auth.admin.list_users()
+
+                        # The SDK returns an object where the user list is attached to `.users`
+                        # or can be unpacked directly if handled as a raw data wrapper
+                        users_list = getattr(auth_response, 'users', auth_response)
+
+                        if users_list:
+                            # Loop through the user list to find the exact email match
+                            for user in users_list:
+                                if hasattr(user,
+                                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
+                                    active_owner_uuid = user.id
+                                    break
+
+                    except Exception as e:
+                        print(f"Error querying Supabase Auth Admin table: {e}")
+
+                    # ── STAGE 2: FETCH THE LEGACY LABEL FROM SALESPERSON MAPPING ─────
+                    legacy_agent_label = "Unknown Agent"
+                    try:
+                        agent_query = supabase.table("salesperson_mappings") \
+                            .select("legacy_label") \
+                            .eq("salesperson_email", current_user_email.strip()) \
+                            .limit(1).execute()
+
+                        if agent_query.data and agent_query.data[0].get("legacy_label"):
+                            legacy_agent_label = agent_query.data[0]["legacy_label"]
+                    except Exception as e:
+                        print(f"Error looking up legacy mapping table: {e}")
+
+                    # ── STAGE 3: VALIDATION AND EXECUTION ────────────────────────────
+                    if not active_owner_uuid:
+                        st.error(
+                            f"🚨 Ingestion Blocked: Found your session email ('{current_user_email}'), but it does not map to any registered account in Supabase Auth.")
                     else:
-                        st.error("Transaction Aborted: Target student identifier matrix mapping not found.")
+                        # Execute log insertion using the freshly resolved UUID
+                        success, message = log_crm_call_interaction(
+                            email=c_email.strip(),
+                            duration_sec=int(duration_sec),
+                            agent_name=legacy_agent_label,
+                            owner_id=active_owner_uuid,  # <-- Pass the real Auth UUID here!
+                            direction=direction,
+                            transcript_text=transcript_text,
+                            remark_cat=remark_cat,
+                            summary_text=remarks_text[:200] if remarks_text else "No summary provided.",
+                            interest=interest,
+                            followup_req=f_req,
+                            next_followup_str=f_date_str,
+                            priority=f_pri
+                        )
 
-
-
-#
+                        if success:
+                            st.success("Interaction touchpoint committed directly to transactional registries.")
+                            st.rerun()
+                        else:
+                            st.error(f"Transaction Aborted: {message}")
 
 def render_candidate_entry_form(df, notes):
     # ── Identical Page Header Layout ─────────────────────────────
