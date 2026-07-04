@@ -17,9 +17,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
-
+import requests
 from dotenv import load_dotenv
-from database_pipeline import log_crm_call_interaction
 from datetime import datetime
 
 import google.generativeai as genai
@@ -124,9 +123,9 @@ def identify_risk_factors(input_data: dict) -> dict:
 
 def log_crm_call_interaction(
     email: str, duration_sec: int, agent_name: str, direction: str,
-    transcript_text: str, owner_id: str, remarks_text: str = None, remark_cat: str = None,
+    owner_id: str, remark_cat: str = None,
     outcomes_list: list = None, summary_text: str = None, interest: str = "medium",
-    key_topics_list: list = None, followup_req: bool = False,
+    followup_req: bool = False,
     next_followup_str: str = None, priority: str = None
     ):
     """Resolves transactional key bindings and writes communication history logs."""
@@ -147,10 +146,10 @@ def log_crm_call_interaction(
             prediction_uuid = pred_query.data[0]["id"]
 
         # C. Text analytics sentiment calculation
-        if transcript_text:
+        if summary_text:
             joy_words = ['interested', 'excited', 'yes', 'perfect', 'join', 'good', 'agree']
             sad_words = ['expensive', 'cancel', 'no', 'busy', 'unable', 'drop', 'bad']
-            lower_text = transcript_text.lower()
+            lower_text = summary_text.lower()
             pos = sum(1 for w in joy_words if w in lower_text)
             neg = sum(1 for w in sad_words if w in lower_text)
             sentiment_score = round((pos - neg) / (pos + neg), 2) if (pos + neg) > 0 else 0.0
@@ -167,7 +166,6 @@ def log_crm_call_interaction(
             "call_direction": direction.lower().strip(),
             "outcomes": outcomes_list if outcomes_list else [],
             "remark_category": remark_cat if remark_cat else None,
-            "transcript": transcript_text,
             "transcript_summary": summary_text,
             "sentiment_score": float(sentiment_score),
             "interest_level": interest.lower().strip(),
@@ -185,6 +183,58 @@ def log_crm_call_interaction(
     except Exception as db_err:
         print(f"Call logging exception: {db_err}")
         return False, f"Database error: {db_err}"
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+def live_groq_pipeline(text, api_key):
+    """
+    Connects to Groq via REST API. Translates from Malayalam
+    and returns just the summary in JSON format.
+    """
+    if not text.strip():
+        return None
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Cleaned prompt strictly requesting only the translation processing -> final summary
+    prompt = f"""
+    You are an expert recruitment call analyzer. Analyze this transcript content: "{text}"
+
+    Perform the following tasks:
+    1. Translate the text into clear English if it's in Malayalam.
+    2. Write a 1-2 sentence Summary indicating if the candidate will join or not, extracting the primary reason for churn if they decline.
+
+    Return your output strictly in this JSON layout:
+    {{
+        "summary": "1-2 sentence final verdict summary goes here"
+    }}
+    """
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": "You are a precise data extractor that outputs short, clean sentences strictly in JSON format."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 400
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        if response.status_code == 200:
+            return json.loads(response.json()["choices"][0]["message"]["content"])
+        else:
+            st.error(f"Groq Error: {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Network Error: {str(e)}")
+        return None
 
 def parse_gemini_response(response_data):
     if not isinstance(response_data, dict):
@@ -1624,7 +1674,7 @@ def page_candidate_explorer(df, notes):
 ## PAGE 3 — Call log
 # ─────────────────────────────────────────────
 
-def render_agent_workspace_and_logger(supabase, owner_uuid):
+def render_agent_workspace_and_logger(supabase, active_owner_uuid):
     """
     Renders the custom styled Smart Agent Workspace with KPI matrix summary
     cards, priority followup task queues, and an integrated interaction logger.
@@ -1637,10 +1687,30 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
     """, unsafe_allow_html=True)
 
     current_user_email = st.session_state.get("user_email")
+    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
+    active_owner_uuid = None
+    try:
+        # Fetch users from Supabase Auth admin panel
+        auth_response = supabase_service.auth.admin.list_users()
+
+        # The SDK returns an object where the user list is attached to `.users`
+        # or can be unpacked directly if handled as a raw data wrapper
+        users_list = getattr(auth_response, 'users', auth_response)
+
+        if users_list:
+            # Loop through the user list to find the exact email match
+            for user in users_list:
+                if hasattr(user,
+                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
+                    active_owner_uuid = user.id
+                    break
+
+    except Exception as e:
+        print(f"Error querying Supabase Auth Admin table: {e}")
 
     # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
     try:
-        rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": owner_uuid}).execute()
+        rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": active_owner_uuid}).execute()
         if rpc_stats.data:
             s = rpc_stats.data[0]
 
@@ -1677,10 +1747,10 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
         st.warning(f"KPI compilation error: {e}")
 
     # ── 2. SMART TASK REMINDERS QUEUE ─────────────────────────────────────
-    st.markdown('<div class="section-header"><h2>📋 Prioritized Action Items (7 Days)</h2></div>',
+    st.markdown('<div class="section-header"><h2> Prioritized Action Items (7 Days)</h2></div>',
                 unsafe_allow_html=True)
     try:
-        reminders = supabase.rpc("get_followup_reminders", {"p_owner_id": owner_uuid}).execute()
+        reminders = supabase.rpc("get_followup_reminders", {"p_owner_id": active_owner_uuid}).execute()
         if reminders.data:
             df_reminders = pd.DataFrame(reminders.data)
 
@@ -1729,9 +1799,44 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
                 f_req = st.checkbox("Future Followup Required?", value=False)
                 f_date = st.date_input("Next Followup Date", min_value=datetime.today())
 
-            transcript_text = st.text_area("Full Audio Call Transcription",
-                                           placeholder="Paste conversation transcription details here...")
-            remarks_text = st.text_area("Transcription Summary", placeholder="Provide high-level takeaways...")
+            if "current_summary" not in st.session_state:
+                st.session_state["current_summary"] = ""
+            if "previous_text" not in st.session_state:
+                st.session_state["previous_text"] = ""
+
+            # 1. User Inputs Transcript
+            transcript_text = st.text_area(
+                "Full Audio Call Transcription",
+                placeholder="Paste conversation transcription details here (Malayalam supported)...",
+                height=200
+            )
+
+            # 2. Watch for Paste Event (Triggers only when content changes)
+            if transcript_text.strip() and transcript_text != st.session_state["previous_text"]:
+                if not GROQ_API_KEY:
+                    st.error("Missing GROQ_API_KEY in your local .env configuration.")
+                else:
+                    with st.spinner("Processing Malayalam text & extracting summary..."):
+                        result = live_groq_pipeline(transcript_text, GROQ_API_KEY)
+                        if result and "summary" in result:
+                            st.session_state["current_summary"] = result["summary"]
+                            st.session_state["previous_text"] = transcript_text
+                            st.rerun()
+
+            # Reset if user clears the text area manually
+            if not transcript_text.strip() and st.session_state["current_summary"]:
+                st.session_state["current_summary"] = ""
+                st.session_state["previous_text"] = ""
+                st.rerun()
+
+            # 3. Dynamic Summary Display
+            remarks_text = st.text_area(
+                "Transcription Summary",
+                value=st.session_state["current_summary"],
+                placeholder="Summary will auto-generate here once transcript is pasted...",
+                height=100
+            )
+
 
             st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
             if st.form_submit_button("Commit Log Ingestion", type="primary", use_container_width=True):
@@ -1777,7 +1882,7 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
                     # ── STAGE 3: VALIDATION AND EXECUTION ────────────────────────────
                     if not active_owner_uuid:
                         st.error(
-                            f"🚨 Ingestion Blocked: Found your session email ('{current_user_email}'), but it does not map to any registered account in Supabase Auth.")
+                            f" Ingestion Blocked: Found your session email ('{current_user_email}'), but it does not map to any registered account in Supabase Auth.")
                     else:
                         # Execute log insertion using the freshly resolved UUID
                         success, message = log_crm_call_interaction(
@@ -1786,7 +1891,6 @@ def render_agent_workspace_and_logger(supabase, owner_uuid):
                             agent_name=legacy_agent_label,
                             owner_id=active_owner_uuid,  # <-- Pass the real Auth UUID here!
                             direction=direction,
-                            transcript_text=transcript_text,
                             remark_cat=remark_cat,
                             summary_text=remarks_text[:200] if remarks_text else "No summary provided.",
                             interest=interest,
