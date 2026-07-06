@@ -2903,6 +2903,7 @@ def page_live_predictor(df, model_data, supabase):
             financial_issue = st.checkbox("Course fees not affordable", value=pd_state.get('financial_issue', False))
             already_working = st.checkbox("Got placed", value=pd_state.get('already_working', False))
             looking_for_job = st.checkbox("Job hunting, not internship", value=pd_state.get('looking_for_job', False))
+            join_later = st.checkbox("Wants to join later / Postpone", value=pd_state.get('join_later', False))  # Added
 
         st.markdown(
             '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Call Notes & Remarks</div>',
@@ -2935,7 +2936,7 @@ def page_live_predictor(df, model_data, supabase):
             pd_state.update(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected,
                             joined_competitor=joined_competitor, financial_issue=financial_issue,
                             already_working=already_working, looking_for_job=looking_for_job,
-                            decision_pending=decision_pending, call_remarks=call_remarks,
+                            decision_pending=decision_pending, join_later=join_later, call_remarks=call_remarks,
                             call_transcript=call_transcript)
 
             total_amount = pd_state.get('Total_Amount', 25000)
@@ -2982,7 +2983,17 @@ def page_live_predictor(df, model_data, supabase):
                 model_df_input['role'] = "professional" if experience > 0 else "student"
                 model_df_input['background'] = "tech" if "tech" in str(education).lower() else "non tech"
 
+                # Map the checkboxes directly to the numerical 1/0 vectors expected by X
+                model_df_input['not_interested'] = int(not_interested)
+                model_df_input['joined_competitor'] = int(joined_competitor)
+                model_df_input['decision_pending'] = int(decision_pending)
+                model_df_input['already_working'] = int(already_working)
+                model_df_input['looking_for_job'] = int(looking_for_job)
+                model_df_input['financial_issue'] = int(financial_issue)
+                model_df_input['join_later'] = int(join_later)
+
                 input_df = pd.DataFrame([model_df_input])
+
                 for col in categorical_features:
                     if col in input_df.columns:
                         input_df[col] = input_df[col].astype(str)
@@ -3589,8 +3600,8 @@ def page_model_performance(df, model_data):
     if os.path.exists(feat_path):
         feat_df = pd.read_csv(feat_path).head(15)
         st.markdown("### Top 15 Feature Importance ")
-        fig = px.bar(feat_df, x='Feature Importance (Gini/Information Gain)', y='Feature', orientation='h',
-                     color='Feature Importance (Gini/Information Gain)', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'])
+        fig = px.bar(feat_df, x='Coefficient', y='Feature', orientation='h',
+                     color='Coefficient', color_continuous_scale=['#4c1d95','#6366f1','#06b6d4'])
         fig.update_layout(yaxis={'categoryorder':'total ascending'})
         fig.update_layout(**theme(height=400, showlegend=False))
         st.plotly_chart(fig, use_container_width=True)

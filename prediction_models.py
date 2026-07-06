@@ -2231,20 +2231,38 @@ print(model_df['Status'].value_counts())
 # 'Whatsapp Number' is an identifier.
 # 'Course_Grouped_Low_Enrollment' is a derived column for visualization and 'Tag' is also a less useful direct feature.
 
+
+# Define base columns to drop (Removed 'final_inferred_reason' from here so we can parse it first)
 columns_to_drop = [
     'Contact Id', 'Contact Owner.id', 'Contact Owner', 'Created By.id', 'Modified By.id',
     'Created Time', 'Modified Time', 'Last Activity Time', 'Contact Name', 'Program Joined.id',
     'Pipeline owner.id', 'Lead Generated on', 'Whatsapp Number', 'Email ID', 'Payment_Date',
-    'Course_Grouped_Low_Enrollment', 'Tag', 'Program Joined', 'final_inferred_reason' # Removed 'Course' due to data leakage
+    'Course_Grouped_Low_Enrollment', 'Tag', 'Program Joined' # 'Course' removed due to data leakage
 ]
 
-# Drop columns that are no longer needed or are redundant for modeling
 # Ensure these columns exist before trying to drop them
 existing_columns_to_drop = [col for col in columns_to_drop if col in model_df.columns]
-model_df_processed = model_df.drop(columns=existing_columns_to_drop)
+model_df_processed = model_df.drop(columns=existing_columns_to_drop).copy()
 
-print("Columns after dropping irrelevant features:")
+# Convert reason to a clean string format to safely perform matching
+reason_str = model_df_processed['final_inferred_reason'].astype(str).str.lower().str.strip()
+
+# Create engineered text signal features (Binary Int format: 1 or 0)
+model_df_processed['not_interested'] = reason_str.str.contains('not interested', na=False).astype(int)
+model_df_processed['joined_competitor'] = reason_str.str.contains('joined competitor|joined another|institution', na=False).astype(int)
+model_df_processed['decision_pending'] = reason_str.str.contains('decision pending|discussing|technical discussion', na=False).astype(int)
+model_df_processed['already_working'] = reason_str.str.contains('already working|placed|internship', na=False).astype(int)
+model_df_processed['looking_for_job'] = reason_str.str.contains('looking for job|job hunting', na=False).astype(int)
+model_df_processed['financial_issue'] = reason_str.str.contains('financial issue|affordable|fees', na=False).astype(int)
+model_df_processed['join_later'] = reason_str.str.contains('join later|postpone', na=False).astype(int)
+
+# Now drop 'final_inferred_reason' so it does not interfere with the encoding pipeline
+if 'final_inferred_reason' in model_df_processed.columns:
+    model_df_processed = model_df_processed.drop(columns=['final_inferred_reason'])
+
+print("Columns after parsing final_inferred_reason and adding textual signals:")
 print(model_df_processed.columns)
+
 
 # Define target variable
 y = model_df_processed['Status']
@@ -2259,7 +2277,16 @@ numerical_features = [
     'Experience',
     'Total_Amount',
     'Paid_amount',
-    'Paid_Rate'
+    'Paid_Rate',
+# New call signal numeric vectors
+    'not_interested',
+    'joined_competitor',
+    'decision_pending',
+    'already_working',
+    'looking_for_job',
+    'financial_issue',
+    'join_later'
+
 ]
 
 categorical_features = [
