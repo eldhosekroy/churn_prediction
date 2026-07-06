@@ -1788,22 +1788,26 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
                 unsafe_allow_html=True)
 
     with st.expander("Open Communication Ingestion Terminal", expanded=True):
-        with st.form("crm_call_log_form", border=False):
+        with st.container():
             col1, col2 = st.columns(2)
             with col1:
                 c_email = st.text_input("Candidate Target Email Reference", placeholder="student@example.com")
                 duration_sec = st.number_input("Call Duration Metrics (Seconds)", min_value=0, value=60, step=10)
                 interest = st.selectbox("Inferred Interest Level", ["High", "Medium", "Low"], index=1)
-                f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1)
 
             with col2:
                 direction = st.selectbox("Interaction Direction", ["outbound", "inbound"])
                 remark_cat = st.selectbox("Call_remark",
                                           ['positive', 'negative', 'neutral', 'follow_up_required', 'resolved', 'callback_requested', 'not_interested', 'pricing_concern', 'time_constraint', 'need_more_info'])
 
-                # Nested layout control settings
-                f_req = st.checkbox("Future Followup Required?", value=False)
-                f_date = st.date_input("Next Followup Date", min_value=datetime.today())
+            st.markdown('<div style="margin-top: 15px; margin-bottom: 5px; font-size:14px; font-weight:600; color:#cbd5e1; border-bottom: 1px solid #334155; padding-bottom: 5px;"><i class="fa-solid fa-calendar-check" style="margin-right:8px; color:#38bdf8;"></i> Follow-up Action Plan</div>', unsafe_allow_html=True)
+            f_req = st.toggle("Enable Future Follow-up", value=False)
+            
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                f_date = st.date_input("Next Followup Date", min_value=datetime.today(), disabled=not f_req)
+            with col_f2:
+                f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1, disabled=not f_req)
 
             if "current_summary" not in st.session_state:
                 st.session_state["current_summary"] = ""
@@ -1850,7 +1854,7 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
 
 
             st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
-            if st.form_submit_button("Commit Log Ingestion", type="primary", use_container_width=True):
+            if st.button("Commit Log Ingestion", type="primary", use_container_width=True):
                 if not c_email:
                     st.error("Please specify a target email identity mapping reference.")
                 else:
@@ -2032,14 +2036,17 @@ def render_candidate_entry_form(df, notes):
         default_total_fee = st.session_state.candidate_form_data.get('default_total_fee', 0.0)
 
         st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Track Configuration</div>', unsafe_allow_html=True)
+        st.info(f"Selected Course: **{course}**")
         col_course1, col_course2 = st.columns(2)
         with col_course1:
-            st.info(f"Selected Course: **{course}**")
             stream = st.selectbox("Interested Stream *", stream_opts, index=get_index(stream_opts, st.session_state.candidate_form_data.get('stream')))
             track_interested = st.selectbox("Track Customization *", track_opts, index=get_index(track_opts, st.session_state.candidate_form_data.get('track_interested')))
         with col_course2:
             program_mode = st.selectbox("Mode of Program Joined *", mode_opts, index=get_index(mode_opts, st.session_state.candidate_form_data.get('program_mode')))
             program_location = st.selectbox("Program Location *", loc_opts, index=get_index(loc_opts, st.session_state.candidate_form_data.get('program_location')))
+            
+        col_batch1, col_batch2 = st.columns(2)
+        with col_batch1:
             batch_assigned = st.text_input("Batch Assigned *", value=st.session_state.candidate_form_data.get('batch_assigned', ""), placeholder="Aug 2026")
 
         st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Regional Details</div>', unsafe_allow_html=True)
