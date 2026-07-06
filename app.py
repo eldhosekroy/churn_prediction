@@ -608,7 +608,7 @@ st.markdown("""
     }
 
     /* Input fields */
-    .stSelectbox label p, .stNumberInput label p, .stTextInput label p {
+    .stSelectbox label p, .stNumberInput label p, .stTextInput label p, .stDateInput label p, .stTextArea label p {
         color: #a78bfa !important;
         font-weight: 700 !important;
         font-size: 14px !important;
@@ -616,7 +616,7 @@ st.markdown("""
         letter-spacing: 0.8px;
         margin-bottom: 4px;
     }
-    .stSelectbox > div, .stNumberInput > div, .stTextInput > div {
+    .stSelectbox > div, .stNumberInput > div, .stTextInput > div, .stDateInput > div, .stTextArea > div {
         background: rgba(15, 12, 41, 0.5) !important;
         border: 1px solid rgba(255,255,255,0.4) !important;
         border-radius: 8px !important;

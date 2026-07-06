@@ -783,7 +783,7 @@ st.markdown("""
     }
 
     /* Input fields */
-    .stSelectbox label p, .stNumberInput label p, .stTextInput label p {
+    .stSelectbox label p, .stNumberInput label p, .stTextInput label p, .stDateInput label p, .stTextArea label p {
         color: #a78bfa !important;
         font-weight: 700 !important;
         font-size: 14px !important;
@@ -791,7 +791,7 @@ st.markdown("""
         letter-spacing: 0.8px;
         margin-bottom: 4px;
     }
-    .stSelectbox > div, .stNumberInput > div, .stTextInput > div {
+    .stSelectbox > div, .stNumberInput > div, .stTextInput > div, .stDateInput > div, .stTextArea > div {
         background: rgba(15, 12, 41, 0.5) !important;
         border: 1px solid rgba(255,255,255,0.4) !important;
         border-radius: 8px !important;
@@ -1797,7 +1797,7 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
 
             with col2:
                 direction = st.selectbox("Interaction Direction", ["outbound", "inbound"])
-                remark_cat = st.selectbox("Call_remark",
+                remark_cat = st.selectbox("Call Remark",
                                           ['positive', 'negative', 'neutral', 'follow_up_required', 'resolved', 'callback_requested', 'not_interested', 'pricing_concern', 'time_constraint', 'need_more_info'])
 
             st.markdown('<div style="margin-top: 15px; margin-bottom: 5px; font-size:14px; font-weight:600; color:#cbd5e1; border-bottom: 1px solid #334155; padding-bottom: 5px;"><i class="fa-solid fa-calendar-check" style="margin-right:8px; color:#38bdf8;"></i> Follow-up Action Plan</div>', unsafe_allow_html=True)
@@ -1805,7 +1805,7 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
             
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                f_date = st.date_input("Next Followup Date", min_value=datetime.today(), disabled=not f_req)
+                f_date = st.date_input("Followup Date", min_value=datetime.today(), disabled=not f_req)
             with col_f2:
                 f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1, disabled=not f_req)
 
