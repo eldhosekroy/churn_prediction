@@ -1138,7 +1138,7 @@ def page_auth():
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         tab1, tab2 = st.tabs(["Login", "Register"])
-        
+
         with tab1:
             st.markdown("""
             <div style="text-align: center; padding: 20px 0;">
@@ -1156,9 +1156,21 @@ def page_auth():
                 if submitted:
                     if login_email and login_password:
                         try:
-                            res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
+                            res = supabase.auth.sign_in_with_password(
+                                {"email": login_email, "password": login_password})
                             st.session_state.logged_in = True
                             st.session_state.user_email = res.user.email
+
+                            # 🌟 Extract role from user metadata (defaults to Salesperson if not defined)
+                            user_metadata = res.user.user_metadata if res.user.user_metadata else {}
+                            st.session_state.user_role = user_metadata.get("role", "Salesperson")
+
+                            # Set appropriate default landing page depending on the role
+                            if st.session_state.user_role == "Admin":
+                                st.session_state.current_page = "Overview"
+                            else:
+                                st.session_state.current_page = "Smart Agent Workspace"
+
                             if res.session:
                                 st.session_state.access_token = res.session.access_token
                                 st.session_state.refresh_token = res.session.refresh_token
@@ -1173,24 +1185,39 @@ def page_auth():
             <div style="text-align: center; padding: 20px 0;">
                 <i class="fa-solid fa-user-plus" style="font-size: 32px; color: #34d399; margin-bottom: 16px;"></i>
                 <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Create Account</h1>
-                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Register for executive access</p>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Register for enterprise access</p>
             </div>
             """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             with st.form("register_form", border=False):
                 reg_email = st.text_input("Email Address", key="reg_email")
                 reg_password = st.text_input("Password", type="password", key="reg_password")
+
+                # 🌟 Added Role selection drop-down directly into Registration Form
+                reg_role = st.selectbox("Select Account Tier", ["Salesperson", "Admin"], index=0, key="reg_role")
+
                 st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
                 submitted_reg = st.form_submit_button("Sign Up", type="primary", use_container_width=True)
                 if submitted_reg:
                     if reg_email and reg_password:
                         try:
-                            res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
-                            st.success("Registration successful! You can now log in using the Login tab.")
+                            # 🌟 Pass the selected role metadata directly into Supabase User Sign Up configuration
+                            res = supabase.auth.sign_up({
+                                "email": reg_email,
+                                "password": reg_password,
+                                "options": {
+                                    "data": {
+                                        "role": reg_role
+                                    }
+                                }
+                            })
+                            st.success(
+                                f"Registration successful as {reg_role}! You can now log in using the Login tab.")
                         except Exception as e:
                             st.error(f"Registration failed: {e}")
                     else:
                         st.warning("Please enter email and password.")
+
 
 def sidebar():
     with st.sidebar:
@@ -1203,6 +1230,7 @@ def sidebar():
                 <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
                     Candidate Analytics
                 </div>
+                <div style="margin-top:5px;"><span class="badge-low" style="font-size:10px;">Role: {st.session_state.get('user_role', 'Salesperson')}</span></div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -1215,23 +1243,36 @@ def sidebar():
                 <div style="font-family: 'Inter', sans-serif; font-size: 10px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
                     Candidate Analytics
                 </div>
+                <div style="margin-top:5px;"><span class="badge-low" style="font-size:10px;">Role: {st.session_state.get('user_role', 'Salesperson')}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
-        if "current_page" not in st.session_state:
-            st.session_state.current_page = "Overview"
+        # 🌟 Define access configurations depending on assigned roles
+        user_role = st.session_state.get("user_role", "Salesperson")
 
-        # 1. NAVIGATION PAGES ARRAY WITH YOUR NEW DASHBOARDS
-        pages = [
-            ("Overview", ":material/dashboard:"),
-            ("Candidate Explorer", ":material/search:"),
-            ("Smart Agent Workspace", ":material/assignment_turned_in:"),
-            ("Add New Candidate", ":material/person_add:"), # 🌟 Added New Page Option
-            ("CRM Notes Analysis", ":material/call:"),
-            ("Invoice Analysis", ":material/payments:"),
-            ("Live Predictor", ":material/online_prediction:"),
-            ("Model Performance", ":material/insights:")
-        ]
+        if user_role == "Admin":
+            pages = [
+                ("Overview", ":material/dashboard:"),
+                ("Candidate Explorer", ":material/search:"),
+                ("Salesperson Analytics", ":material/analytics:"),  # 🌟 ADDED THIS
+                ("Smart Agent Workspace", ":material/assignment_turned_in:"),
+                ("Add New Candidate", ":material/person_add:"),
+                ("CRM Notes Analysis", ":material/call:"),
+                ("Invoice Analysis", ":material/payments:"),
+                ("Live Predictor", ":material/online_prediction:"),
+                ("Model Performance", ":material/insights:")
+            ]
+        else:
+            # Salesperson gets visibility access ONLY to specified scope paths
+            pages = [
+                ("Smart Agent Workspace", ":material/assignment_turned_in:"),
+                ("Add New Candidate", ":material/person_add:"),
+                ("Live Predictor", ":material/online_prediction:")
+            ]
+
+        # Double check that the current fallback page exists inside the user's available structural options
+        if "current_page" not in st.session_state or st.session_state.current_page not in [p[0] for p in pages]:
+            st.session_state.current_page = pages[0][0]
 
         for p_name, p_icon in pages:
             if st.button(p_name, icon=p_icon, use_container_width=True):
@@ -1239,7 +1280,7 @@ def sidebar():
                 st.session_state.show_profile = False
                 st.rerun()
 
-        # 2. DYNAMICALLY HIGHLIGHT ACCORDING TO THE UPDATED ARRAY MAP
+        # 🌟 DYNAMICALLY HIGHLIGHT BUTTON BASED ON VISIBLE INDEX POSITION
         active_idx = [p[0] for p in pages].index(st.session_state.current_page) + 2
         st.markdown(f"""
         <style>
@@ -1255,13 +1296,15 @@ def sidebar():
         page = st.session_state.current_page
 
         st.markdown("<hr style='border-color:rgba(255,255,255,0.2);margin:16px 0;'>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>", unsafe_allow_html=True)
+        st.markdown(
+            "<p style='font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 8px 0;'>Data Sources</p>",
+            unsafe_allow_html=True)
 
         _src = [
             ("<i class='fa-solid fa-users'></i>", "Enrolled & Registered", ".xlsx &nbsp;·&nbsp; 1084 rows"),
-            ("<i class='fa-solid fa-clipboard-list'></i>", "CRM All Contacts",  ".xlsx &nbsp;·&nbsp; 1084 rows"),
-            ("<i class='fa-solid fa-file-invoice'></i>", "Notes Processed",  ".csv &nbsp;·&nbsp; 30K+ rows"),
-            ("<i class='fa-solid fa-robot'></i>", "Churn Model",        ".pkl &nbsp;·&nbsp; Saved Model"),
+            ("<i class='fa-solid fa-clipboard-list'></i>", "CRM All Contacts", ".xlsx &nbsp;·&nbsp; 1084 rows"),
+            ("<i class='fa-solid fa-file-invoice'></i>", "Notes Processed", ".csv &nbsp;·&nbsp; 30K+ rows"),
+            ("<i class='fa-solid fa-robot'></i>", "Churn Model", ".pkl &nbsp;·&nbsp; Saved Model"),
         ]
         for _icon, _name, _meta in _src:
             st.markdown(f"""
@@ -1275,7 +1318,6 @@ def sidebar():
   <div style="font-size:10px;color:#475569;margin-top:3px;padding-left:28px;">{_meta}</div>
 </div>""", unsafe_allow_html=True)
 
-        # 🌟 UPDATED text to reflect that data can now be modified/added
         st.markdown("""
 <div style="background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.2);
             border-radius:9px;padding:8px 12px;margin-top:4px;overflow:hidden;">
@@ -1292,6 +1334,8 @@ def sidebar():
                 del st.session_state["access_token"]
             if "refresh_token" in st.session_state:
                 del st.session_state["refresh_token"]
+            if "user_role" in st.session_state:
+                del st.session_state["user_role"]
             try:
                 supabase.auth.sign_out()
             except:
@@ -1677,7 +1721,189 @@ def page_candidate_explorer(df, notes):
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-## PAGE 3 — Call log
+# Page 3: Sales person analysis
+# ─────────────────────────────────────────────
+def page_salesperson_stats(candidates_df, supabase):
+    st.markdown(
+        '<div class="page-header"><h1><i class="fa-solid fa-chart-line"></i> Salesperson Analytics</h1><p>Admin Control Dashboard: Live tracking across profiles, system predictions, and risk vectors.</p></div>',
+        unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # 1. LIVE DATA FETCHING & MAPPING PIPELINE
+    # ─────────────────────────────────────────────
+    @st.cache_data(ttl=60)  # Cache for 1 minute to keep app fast
+    def fetch_relational_metrics():
+        try:
+            # A. Fetch mappings: legacy_label (name) <-> salesperson_email
+            map_res = supabase.table("salesperson_mappings").select("legacy_label, salesperson_email").execute()
+            map_df = pd.DataFrame(map_res.data) if map_res.data else pd.DataFrame(
+                columns=["legacy_label", "salesperson_email"])
+
+            # B. Fetch prediction logs
+            pred_res = supabase.table("predictions").select("predicted_by, risk_level").execute()
+            preds_raw = pd.DataFrame(pred_res.data) if pred_res.data else pd.DataFrame(
+                columns=["predicted_by", "risk_level"])
+
+            return map_df, preds_raw
+        except Exception as e:
+            st.error(f"Error fetching structural relational data maps: {e}")
+            return pd.DataFrame(), pd.DataFrame()
+
+    with st.spinner("Compiling cross-table salesperson relationships..."):
+        map_df, preds_df = fetch_relational_metrics()
+
+    if map_df.empty:
+        st.warning("Salesperson mapping matrix table is empty. Relational graphics cannot resolve names correctly.")
+        return
+
+    # Clean text formatting to ensure join matches work flawlessly
+    map_df['legacy_label'] = map_df['legacy_label'].fillna("").str.strip().str.lower()
+    map_df['salesperson_email'] = map_df['salesperson_email'].fillna("").str.strip().str.lower()
+
+    # Build dictionary maps for fast bidirectional looking up
+    name_to_email = dict(zip(map_df['legacy_label'], map_df['salesperson_email']))
+    email_to_name = dict(zip(map_df['salesperson_email'], map_df['legacy_label']))
+
+    owner_col = 'Contact Owner'
+    status_col = 'Status'
+
+    # Convert candidates owner names to lowercase for robust dictionary key matching
+    candidates_df['cleaned_owner'] = candidates_df[owner_col].fillna("unassigned").str.strip().str.lower()
+
+    # Map raw candidate owner strings to their official corporate Email IDs
+    candidates_df['mapped_email'] = candidates_df['cleaned_owner'].map(name_to_email).fillna(
+        candidates_df['cleaned_owner'])
+
+    # Standardize predictions dataset text rows
+    if not preds_df.empty:
+        preds_df['predicted_by'] = preds_df['predicted_by'].fillna("unknown").str.strip().str.lower()
+        preds_df['risk_level'] = preds_df['risk_level'].astype(str).str.strip().str.capitalize()
+        # Create a display label for graphs so admins see human-readable names instead of raw email strings
+        preds_df['display_name'] = preds_df['predicted_by'].map(email_to_name).fillna(preds_df['predicted_by'])
+    else:
+        preds_df['display_name'] = pd.Series(dtype='str')
+
+    # ─────────────────────────────────────────────
+    # 2. METRIC MATRIX GENERATION
+    # ─────────────────────────────────────────────
+    # A. Registration metrics
+    total_reg_counts = candidates_df['mapped_email'].value_counts()
+    best_sp_email = total_reg_counts.idxmax() if not total_reg_counts.empty else "N/A"
+    best_sp_display = email_to_name.get(best_sp_email, best_sp_email)
+    best_sp_count = total_reg_counts.max() if not total_reg_counts.empty else 0
+
+    # B. Churn processing using mapped Email context references
+    churn_mask = candidates_df[status_col].astype(str).str.lower().str.contains('churn', na=False)
+    churn_counts_by_sp = candidates_df[churn_mask]['mapped_email'].value_counts()
+    churn_rates = (churn_counts_by_sp / total_reg_counts).fillna(0)
+    highest_churn_email = churn_rates.idxmax() if not churn_rates.empty and churn_rates.max() > 0 else "None"
+    highest_churn_display = email_to_name.get(highest_churn_email, highest_churn_email)
+    highest_churn_val = f"{churn_rates.max() * 100:.1f}%" if highest_churn_email != "None" else "0%"
+
+    # C. Prediction matrix calculations
+    total_preds_run = len(preds_df)
+    high_risk_total = preds_df[preds_df['risk_level'] == 'High'].shape[0] if not preds_df.empty else 0
+
+    # Render KPIs
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(f"""<div class="kpi-card kpi-blue">
+            <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+            <div class="kpi-title">Top Recruiter</div>
+            <div class="kpi-value" style="font-size:18px; overflow:hidden; text-overflow:ellipsis;">{best_sp_display}</div>
+            <div class="kpi-sub">{best_sp_count} Candidates Registered</div>
+        </div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""<div class="kpi-card kpi-red">
+            <div class="kpi-icon"><i class="fa-solid fa-user-slash"></i></div>
+            <div class="kpi-title">Highest Churn Risk</div>
+            <div class="kpi-value" style="font-size:18px; overflow:hidden; text-overflow:ellipsis;">{highest_churn_display}</div>
+            <div class="kpi-sub">Loss Ratio: {highest_churn_val}</div>
+        </div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""<div class="kpi-card kpi-green">
+            <div class="kpi-icon"><i class="fa-solid fa-calculator"></i></div>
+            <div class="kpi-title">Total Inferences Run</div>
+            <div class="kpi-value">{total_preds_run}</div>
+            <div class="kpi-sub">Across all connected platform agents</div>
+        </div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""<div class="kpi-card kpi-amber">
+            <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="kpi-title">High Risk Warnings</div>
+            <div class="kpi-value">{high_risk_total}</div>
+            <div class="kpi-sub">Flagged anomalies identified</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # 3. GRAPHICAL VISUALIZATIONS
+    # ─────────────────────────────────────────────
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown('<div class="section-header"><h2>Candidates Registered per Salesperson</h2></div>',
+                    unsafe_allow_html=True)
+        # For readability on graphs, map the emails back to friendly local names
+        graph_reg_data = total_reg_counts.reset_index()
+        graph_reg_data.columns = ['Salesperson Email', 'Count']
+        graph_reg_data['Salesperson Name'] = graph_reg_data['Salesperson Email'].map(email_to_name).fillna(
+            graph_reg_data['Salesperson Email'])
+
+        fig_reg = px.bar(graph_reg_data, x='Count', y='Salesperson Name', orientation='h',
+                         template='plotly_dark', color='Count',
+                         color_continuous_scale=['#a78bfa', '#38bdf8'])
+        fig_reg.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False,
+                              yaxis={'categoryorder': 'total ascending'})
+        st.plotly_chart(fig_reg, use_container_width=True)
+
+    with c2:
+        st.markdown('<div class="section-header"><h2>Salesperson vs Churn Status</h2></div>', unsafe_allow_html=True)
+        candidates_df['Salesperson Name'] = candidates_df['mapped_email'].map(email_to_name).fillna(
+            candidates_df['mapped_email'])
+        churn_mix = candidates_df.groupby(['Salesperson Name', status_col]).size().reset_index(name='Count')
+
+        fig_churn = px.bar(churn_mix, x='Salesperson Name', y='Count', color=status_col,
+                           template='plotly_dark', barmode='stack',
+                           color_discrete_sequence=['#f87171', '#34d399', '#60a5fa'])
+        fig_churn.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                xaxis_title="Salesperson Name")
+        st.plotly_chart(fig_churn, use_container_width=True)
+
+    c3, c4 = st.columns(2)
+
+    with c3:
+        st.markdown('<div class="section-header"><h2>Predictions Executed by Account</h2></div>',
+                    unsafe_allow_html=True)
+        if not preds_df.empty:
+            pred_counts = preds_df['display_name'].value_counts().reset_index()
+            pred_counts.columns = ['Salesperson Name', 'Total Runs']
+
+            fig_pred = px.pie(pred_counts, values='Total Runs', names='Salesperson Name', template='plotly_dark',
+                              hole=0.4, color_discrete_sequence=px.colors.sequential.Blues_r)
+            fig_pred.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_pred, use_container_width=True)
+        else:
+            st.info("No active prediction records discovered.")
+
+    with c4:
+        st.markdown('<div class="section-header"><h2>High Risk Analysis Distribution</h2></div>',
+                    unsafe_allow_html=True)
+        if not preds_df.empty and 'risk_level' in preds_df.columns:
+            risk_mix = preds_df.groupby(['display_name', 'risk_level']).size().reset_index(name='Count')
+
+            fig_risk = px.bar(risk_mix, x='Count', y='display_name', color='risk_level', orientation='h',
+                              template='plotly_dark', barmode='group',
+                              color_discrete_map={'High': '#f87171', 'Medium': '#fbbf24', 'Low': '#34d399'})
+            fig_risk.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                   yaxis_title="Salesperson Name")
+            st.plotly_chart(fig_risk, use_container_width=True)
+        else:
+            st.info("Risk metrics unavailable or not configured inside predictions.")
+
+# ─────────────────────────────────────────────
+## PAGE 4 — Call log
 # ─────────────────────────────────────────────
 
 def render_agent_workspace_and_logger(supabase, active_owner_uuid):
@@ -1921,6 +2147,9 @@ def render_agent_workspace_and_logger(supabase, active_owner_uuid):
                         else:
                             st.error(f"Transaction Aborted: {message}")
 
+# ─────────────────────────────────────────────
+# Page 5: Add candidate
+# ─────────────────────────────────────────────
 def render_candidate_entry_form(df, notes):
     # ── Identical Page Header Layout ─────────────────────────────
     st.markdown("""
@@ -2210,163 +2439,7 @@ def render_candidate_entry_form(df, notes):
                 st.error(f"Ingestion Interruption: {e}")
 
 # ─────────────────────────────────────────────
-# PAGE 4 — candidate profile
-# ─────────────────────────────────────────────
-
-def render_360_student_analytics_hub(supabase):
-    """
-    Renders a unified 360-degree candidate profile using the database
-    analytical view layout matching your exact template columns.
-    """
-    st.markdown("""
-    <div class="page-header">
-        <h1><i class="fa-solid fa-user-circle"></i> 360° Candidate Diagnostics</h1>
-        <p>Inspect multi-source timelines, evaluation records, and AI risk remediation blueprints.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    lookup_email = st.text_input("Search Candidate Diagnostic Profiles by Email Location",
-                                 placeholder="enter_candidate_email@domain.com")
-
-    if not lookup_email:
-        st.info(" Supply a valid candidate email target vector above to generate analytical timelines.")
-        return
-
-    try:
-        res = supabase.rpc("get_churn_analysis", {"p_email": lookup_email.strip()}).execute()
-
-        if not res.data or res.data[0]['candidate_name'] is None:
-            st.warning(f"No active database ledger matching the identity matrix string: '{lookup_email}'")
-            return
-
-        p = res.data[0]
-
-        # Color coding risk profiles
-        risk_label = str(p['current_risk_level']).upper()
-        risk_color = "#34d399" if risk_label == "LOW" else ("#fbbf24" if risk_label == "MEDIUM" else "#f87171")
-
-        # Trend parsing flags
-        trend_label = str(p['engagement_trend']).upper()
-        trend_color = "#34d399" if "IMP" in trend_label else ("#60a5fa" if "STA" in trend_label else "#f87171")
-
-        # ── GRID COLUMN PANELS (Matches Candidate Explorer Style) ──────────────
-        pc1, pc2, pc3 = st.columns([1.2, 1.2, 1.6])
-        card_style = "height:100%; min-height:520px; display:flex; flex-direction:column; justify-content:space-between;"
-
-        # Column 1: Core Persona Identity Info Card
-        with pc1:
-            st.markdown(f"""
-            <div class="candidate-card" style="{card_style}">
-                <div>
-                    <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-                        <i class="fa-regular fa-id-card" style="color:#6366f1; margin-right:8px;"></i> Identity Profile
-                    </div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Full Name:</span> <b style="color:#e2e8f0;">{p.get('candidate_name', 'N/A')}</b></div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Target Email:</span> <b style="color:#38bdf8; font-size:13px;">{lookup_email}</b></div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Persona Group:</span> <b style="color:#e2e8f0;">{str(p.get('current_role', 'N/A')).title()}</b></div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Background:</span> <b style="color:#e2e8f0;">{str(p.get('current_background', 'N/A')).upper()}</b></div>
-                </div>
-                <div style="margin-top:14px; padding:12px 14px; border-radius:8px; background:rgba(0,0,0,0.25); text-align:center; border: 1px solid rgba(255,255,255,0.05)">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600; letter-spacing:0.5px; margin-bottom:2px;">Engagement Dynamic</div>
-                    <span style="color:{trend_color}; font-weight:800; font-size:15px;">{trend_label}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Column 2: Pipeline Vector Scoring Insights Card
-        with pc2:
-            prob_val = float(p.get('current_churn_probability') or 0.0)
-            st.markdown(f"""
-            <div class="candidate-card" style="{card_style}">
-                <div>
-                    <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-                        <i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Evaluation Metrics
-                    </div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Pipeline Status:</span> <b style="color:#e2e8f0;">{p.get('current_status', 'In Queue')}</b></div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">AI Score Vector:</span> <b style="color:#e2e8f0;">{prob_val:.2%}</b></div>
-                    <div style="margin-bottom:12px;"><span style="color:#64748b;">Risk Matrix Tier:</span> <b style="color:{risk_color};">{risk_label}</b></div>
-                </div>
-                <div style="margin-top:14px; padding:12px 14px; border-radius:8px; background:rgba(0,0,0,0.25); text-align:center; border: 1px solid rgba(255,255,255,0.05)">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600; letter-spacing:0.5px; margin-bottom:2px;">Inference Risk Profile</div>
-                    <span style="color:{risk_color}; font-weight:800; font-size:15px;">{risk_label} CATEGORY</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Column 3: AI Remediations & Time History Logs Card
-        with pc3:
-            # Reconstruct AI Insight Cards
-            reasons_list = p.get("all_reasons", "No active pipeline vulnerabilities captured.")
-            recs_list = p.get("all_recommendations", "Maintain nominal engagement touchpoint intervals.")
-
-            reasons_html = ""
-            if isinstance(reasons_list, list):
-                reasons_html = "".join(
-                    [f"<div style='font-size:13px; color:#e2e8f0; margin-bottom:4px;'>&bull; {r}</div>" for r in
-                     reasons_list])
-            else:
-                reasons_html = f"<div style='font-size:13px; color:#e2e8f0;'>{reasons_list}</div>"
-
-            recs_html = ""
-            if isinstance(recs_list, list):
-                recs_html = "".join(
-                    [f"<div style='font-size:13px; color:#e2e8f0; margin-bottom:4px;'>&bull; {r}</div>" for r in
-                     recs_list])
-            else:
-                recs_html = f"<div style='font-size:13px; color:#e2e8f0;'>{recs_list}</div>"
-
-            ai_insights_panel = f"""
-            <div style='padding:14px; border-radius:8px; background:rgba(239,68,68,0.03); border:1px solid rgba(239,68,68,0.15); margin-bottom:10px;'>
-                <div style="font-size:12px; font-weight:700; color:#ef4444; text-transform:uppercase; margin-bottom:6px;"><i class="fa-solid fa-circle-exclamation"></i> Churn Risk Drivers</div>
-                {reasons_html}
-            </div>
-            <div style='padding:14px; border-radius:8px; background:rgba(16,185,129,0.03); border:1px solid rgba(16,185,129,0.15); margin-bottom:12px;'>
-                <div style="font-size:12px; font-weight:700; color:#10b981; text-transform:uppercase; margin-bottom:6px;"><i class="fa-solid fa-wand-magic-sparkles"></i> Action Blueprint</div>
-                {recs_html}
-            </div>
-            """
-
-            # Parse historical call logs
-            call_logs = p.get("call_history_json", [])
-            history_rows_html = "<div style='max-height:160px; overflow-y:auto; padding-right:4px;'>"
-            if call_logs and len(call_logs) > 0:
-                for call in call_logs:
-                    c_date = str(call.get('call_date', ''))[:10]
-                    c_sent = float(call.get('sentiment', 0.0))
-                    c_sent_color = "#34d399" if c_sent > 0 else ("#ef4444" if c_sent < 0 else "#94a3b8")
-                    c_rem = call.get('remarks', 'No remark notes captured.')
-
-                    history_rows_html += f"""
-                    <div style="background:rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:6px; margin-bottom:6px;">
-                        <div style="display:flex; justify-content:timezone; justify-content:space-between; font-size:11px; color:#94a3b8; margin-bottom:3px;">
-                            <span><b>📅 {c_date}</b></span>
-                            <span style="color:{c_sent_color};">Sentiment: {c_sent:+.2f}</span>
-                        </div>
-                        <div style="font-size:12px; color:#cbd5e1; line-height:1.3;">{c_rem}</div>
-                    </div>
-                    """
-            else:
-                history_rows_html += "<div style='color:#475569; font-style:italic; font-size:12px; padding:10px 0;'>No phone call touches tracked.</div>"
-            history_rows_html += "</div>"
-
-            st.markdown(f"""
-            <div class="candidate-card" style="{card_style}; justify-content:flex-start;">
-                <div style="font-size:15px; font-weight:800; color:#f8fafc; margin-bottom:16px; text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-                    <i class="fa-solid fa-brain" style="color:#f43f5e; margin-right:8px;"></i> Prescriptive AI Analysis
-                </div>
-                {ai_insights_panel}
-                <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:8px; letter-spacing:0.5px;">Live Communication Logs Trace</div>
-                {history_rows_html}
-            </div>
-            """, unsafe_allow_html=True)
-
-    except Exception as err:
-        st.error(f"Failed to generate unified candidate diagnostic matrix view: {err}")
-
-
-
-# ─────────────────────────────────────────────
-# PAGE 3 — CRM NOTES ANALYSIS
+# PAGE 6 — CRM NOTES ANALYSIS
 # ─────────────────────────────────────────────
 def page_notes_analysis(df, notes):
     st.markdown("""
@@ -2463,7 +2536,7 @@ def page_notes_analysis(df, notes):
             st.warning("Could not parse 'Created Time' for timeline.")
 
 # ─────────────────────────────────────────────
-# PAGE 4 — PAYMENT ANALYSIS
+# PAGE 7 — PAYMENT ANALYSIS
 # ─────────────────────────────────────────────
 def page_payment_analysis(df):
     st.markdown("""
@@ -2542,9 +2615,9 @@ def page_payment_analysis(df):
 
 
 # ─────────────────────────────────────────────
-# PAGE 5 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
+# PAGE 8 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
 # ─────────────────────────────────────────────
-def page_live_predictor(df, model_data):
+def page_live_predictor(df, model_data, supabase):
     st.markdown("""
     <div class="page-header">
         <h1><i class="fa-solid fa-robot"></i> Live Churn Predictor</h1>
@@ -2565,6 +2638,8 @@ def page_live_predictor(df, model_data):
         st.session_state.predictor_step = 1
     if 'predictor_data' not in st.session_state:
         st.session_state.predictor_data = {}
+    if 'last_searched_email' not in st.session_state:
+        st.session_state.last_searched_email = None
 
     def update_data(**kwargs):
         st.session_state.predictor_data.update(kwargs)
@@ -2575,7 +2650,9 @@ def page_live_predictor(df, model_data):
     def prev_step():
         st.session_state.predictor_step -= 1
 
-    st.markdown(f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.predictor_step} of 3</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.predictor_step} of 3</div>',
+        unsafe_allow_html=True)
     st.progress(st.session_state.predictor_step / 3.0)
 
     llm_options = ["Gemini 2.5 Flash", "Groq (Llama 3)", "Hugging Face (Mistral)"]
@@ -2583,7 +2660,7 @@ def page_live_predictor(df, model_data):
     all_options = llm_options + ml_options
 
     pd_state = st.session_state.predictor_data
-    
+
     # Extract model artifacts from model_data
     final_model = model_data.get('model')
     feature_columns = model_data.get('feature_columns', [])
@@ -2591,32 +2668,104 @@ def page_live_predictor(df, model_data):
     categorical_features = model_data.get('categorical_features', [])
     balance_method = model_data.get('balance_method', 'none')
 
-    # Filter for valid Status values
-    df = df[df['Status'].isin(['Churned', 'Joined'])].copy()
+    # Filter for valid Status values (keeping original case checking intact)
+    status_mask = df['Status'].astype(str).str.lower().isin(['churned', 'joined'])
+    filtered_df = df[status_mask].copy()
 
     def get_index(options_list, val):
-        return options_list.index(val) if val in options_list else 0
+        if val is not None and str(val).strip() in [str(o).strip() for o in options_list]:
+            # Match accurately ignoring subtle structural spacing
+            for idx, opt in enumerate(options_list):
+                if str(opt).strip().lower() == str(val).strip().lower():
+                    return idx
+        return 0
 
     if st.session_state.predictor_step == 1:
         st.markdown('<div class="section-header"><h2>Core Details & AI Settings</h2></div>', unsafe_allow_html=True)
-        col_ai, col_ident = st.columns([1, 2])
+        col_ai, col_ident, col_sync = st.columns([1.5, 2, 0.8])
+
         with col_ai:
-            selected_model_name = st.selectbox("Select AI Model", options=all_options, index=get_index(all_options, pd_state.get('selected_model_name', all_options[0])), help="Choose which trained algorithm or AI to use for the prediction.")
+            selected_model_name = st.selectbox("Select AI Model", options=all_options, index=get_index(all_options,
+                                                pd_state.get('selected_model_name', all_options[0])),
+                                                help="Choose which trained algorithm or AI to use for the prediction.")
+
         with col_ident:
-            c_email = st.text_input("Candidate Email Identity (Database Primary Key Identifier)", value=pd_state.get('c_email', "candidate_audit@domain.com"), help="The evaluation history record will log to the production server linked under this index.")
+            c_email = st.text_input("Candidate Email Id",
+                                    value=pd_state.get('c_email', ""), placeholder="candidate_audit@domain.com",
+                                    help="The evaluation history record will log to the production server linked under this index.")
 
-        st.markdown(f"**Model Context:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing Matrix:** {format_balance_method(balance_method)}")
+        # ─────────────────────────────────────────────
+        # PROFILE LOOKUP & AUTOFILL LOGIC
+        # ─────────────────────────────────────────────
+        with col_sync:
+            st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
+            sync_triggered = st.button("Sync Profile", type="primary" , use_container_width=True, icon=":material/sync:")
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-user" style="margin-right:8px;"></i> Candidate Demographics</div>', unsafe_allow_html=True)
+        if sync_triggered and c_email:
+            cleaned_target_email = str(c_email).strip().lower()
+            # Match directly inside the df table
+            matched_candidate = df[df['Email ID'].astype(str).str.strip().str.lower() == cleaned_target_email]
+
+            if not matched_candidate.empty:
+                candidate_row = matched_candidate.iloc[0]
+
+                # Maps your visual fields directly back to the database record items safely
+                autofill_payload = {
+                    'c_email': str(candidate_row.get('email', c_email)),
+                    'Gender': candidate_row.get('Gender', None),
+                    'Education': candidate_row.get('Education', None),
+                    'Course': candidate_row.get('Course', None),
+                    'Stream': candidate_row.get('Stream', None),
+                    'Track Interested': candidate_row.get('Track Interested', None),
+                    'Mode of Program Joined': candidate_row.get('Mode of Program Joined', None),
+                    'Batch Assigned': candidate_row.get('Batch Assigned', None),
+                    'Source of lead': candidate_row.get('Source of lead', None),
+                    'City': candidate_row.get('City', None),
+                    'Mailing State': candidate_row.get('Mailing State', None),
+                    'Mailing Country': candidate_row.get('Mailing Country', None),
+                    'Program Location': candidate_row.get('Program Location', None),
+                    'Invoice': candidate_row.get('Invoice', None),
+                    'Payment_mode': candidate_row.get('Payment_mode', None),
+                    'Total_Amount': int(candidate_row.get('Total_Amount')) if pd.notna(
+                        candidate_row.get('Total_Amount')) else 25000,
+                    'Paid_amount': int(candidate_row.get('Paid_amount')) if pd.notna(
+                        candidate_row.get('Paid_amount')) else 10000,
+                    'Induction session': candidate_row.get('Induction session', None),
+                    'Feedback': candidate_row.get('Feedback', None),
+                    'Test': candidate_row.get('Test', None),
+                    'Followup Email': candidate_row.get('Followup Email', None),
+                    'Semester': int(candidate_row.get('Semester')) if pd.notna(candidate_row.get('Semester')) else 3,
+                    'Year of Graduation': int(candidate_row.get('Year of Graduation')) if pd.notna(
+                        candidate_row.get('Year of Graduation')) else 2026,
+                    'Experience': int(candidate_row.get('Experience')) if pd.notna(
+                        candidate_row.get('Experience')) else 3,
+                }
+
+                update_data(**autofill_payload)
+                st.toast(f"Profile synchronized successfully for {c_email}!", icon=":material/person_check:")
+                st.rerun()
+            else:
+                st.toast("No existing record found for this email. Continuing with manual entry.",
+                         icon=":material/person_search:")
+
+        st.markdown(
+            f"**Model Context:** {model_data.get('model_display_name', 'Unknown')}  •  **Balancing Matrix:** {format_balance_method(balance_method)}")
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-user" style="margin-right:8px;"></i> Candidate Demographics</div>',
+            unsafe_allow_html=True)
         col_dem1, col_dem2 = st.columns(2)
         with col_dem1:
             gender_opts = sorted(df['Gender'].dropna().unique())
             gender = st.selectbox("Gender", gender_opts, index=get_index(gender_opts, pd_state.get('Gender')))
         with col_dem2:
             edu_opts = sorted(df['Education'].dropna().unique())
-            education = st.selectbox("Education Background", edu_opts, index=get_index(edu_opts, pd_state.get('Education')))
+            education = st.selectbox("Education Background", edu_opts,
+                                     index=get_index(edu_opts, pd_state.get('Education')))
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Enrollment Details</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Enrollment Details</div>',
+            unsafe_allow_html=True)
         col_prog1, col_prog2, col_prog3 = st.columns(3)
         with col_prog1:
             course_opts = sorted(df['Course'].dropna().unique())
@@ -2625,40 +2774,54 @@ def page_live_predictor(df, model_data):
             stream = st.selectbox("Stream", stream_opts, index=get_index(stream_opts, pd_state.get('Stream')))
         with col_prog2:
             track_opts = sorted(df['Track Interested'].dropna().unique())
-            track_interested = st.selectbox("Track Interest", track_opts, index=get_index(track_opts, pd_state.get('Track Interested')))
+            track_interested = st.selectbox("Track Interest", track_opts,
+                                            index=get_index(track_opts, pd_state.get('Track Interested')))
             mode_opts = sorted(df['Mode of Program Joined'].dropna().unique())
-            mode = st.selectbox("Mode of Program Joined", mode_opts, index=get_index(mode_opts, pd_state.get('Mode of Program Joined')))
+            mode = st.selectbox("Mode of Program Joined", mode_opts,
+                                index=get_index(mode_opts, pd_state.get('Mode of Program Joined')))
         with col_prog3:
             ba_opts = sorted(df['Batch Assigned'].dropna().unique())
-            batch_assigned = st.selectbox("Batch Assigned", ba_opts, index=get_index(ba_opts, pd_state.get('Batch Assigned')))
+            batch_assigned = st.selectbox("Batch Assigned", ba_opts,
+                                          index=get_index(ba_opts, pd_state.get('Batch Assigned')))
             source_opts = sorted(df['Source of lead'].dropna().unique())
-            source = st.selectbox("Source of Lead", source_opts, index=get_index(source_opts, pd_state.get('Source of lead')))
+            source = st.selectbox("Source of Lead", source_opts,
+                                  index=get_index(source_opts, pd_state.get('Source of lead')))
 
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2 = st.columns([4, 1])
         with c2:
             if st.button("Next", type="primary", icon=":material/arrow_forward:", use_container_width=True):
-                update_data(selected_model_name=selected_model_name, c_email=c_email, Gender=gender, Course=course, **{"Source of lead": source}, Stream=stream, **{"Track Interested": track_interested}, **{"Mode of Program Joined": mode}, Education=education, **{"Batch Assigned": batch_assigned})
+                update_data(selected_model_name=selected_model_name, c_email=c_email, Gender=gender, Course=course,
+                            **{"Source of lead": source}, Stream=stream, **{"Track Interested": track_interested},
+                            **{"Mode of Program Joined": mode}, Education=education,
+                            **{"Batch Assigned": batch_assigned})
                 next_step()
                 st.rerun()
 
     elif st.session_state.predictor_step == 2:
         st.markdown('<div class="section-header"><h2>Additional & Financial Details</h2></div>', unsafe_allow_html=True)
-        
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Location Details</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Location Details</div>',
+            unsafe_allow_html=True)
         col_loc1, col_loc2 = st.columns(2)
         with col_loc1:
             city_opts = sorted(df['City'].dropna().unique())
             city = st.selectbox("City", city_opts, index=get_index(city_opts, pd_state.get('City')))
             state_opts = sorted(df['Mailing State'].dropna().unique())
-            mailing_state = st.selectbox("Mailing State", state_opts, index=get_index(state_opts, pd_state.get('Mailing State')))
+            mailing_state = st.selectbox("Mailing State", state_opts,
+                                         index=get_index(state_opts, pd_state.get('Mailing State')))
         with col_loc2:
             country_opts = sorted(df['Mailing Country'].dropna().unique())
-            mailing_country = st.selectbox("Mailing Country", country_opts, index=get_index(country_opts, pd_state.get('Mailing Country')))
+            mailing_country = st.selectbox("Mailing Country", country_opts,
+                                           index=get_index(country_opts, pd_state.get('Mailing Country')))
             loc_opts = sorted(df['Program Location'].dropna().unique())
-            program_location = st.selectbox("Program Location", loc_opts, index=get_index(loc_opts, pd_state.get('Program Location')))
+            program_location = st.selectbox("Program Location", loc_opts,
+                                            index=get_index(loc_opts, pd_state.get('Program Location')))
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Financial & Billing Details</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Financial & Billing Details</div>',
+            unsafe_allow_html=True)
         col_fin1, col_fin2 = st.columns(2)
         with col_fin1:
             inv_opts = sorted(df['Invoice'].dropna().unique())
@@ -2669,75 +2832,111 @@ def page_live_predictor(df, model_data):
             total_amount = st.number_input("Total Fee Amount", min_value=0, value=pd_state.get('Total_Amount', 25000))
             paid_amount = st.number_input("Paid Fee Amount", min_value=0, value=pd_state.get('Paid_amount', 10000))
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Engagement</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Engagement</div>',
+            unsafe_allow_html=True)
         col_eng1, col_eng2 = st.columns(2)
         with col_eng1:
             ind_opts = sorted(df['Induction session'].dropna().unique())
-            induction_session = st.selectbox("Induction Session Attendance", ind_opts, index=get_index(ind_opts, pd_state.get('Induction session')))
+            induction_session = st.selectbox("Induction Session Attendance", ind_opts,
+                                             index=get_index(ind_opts, pd_state.get('Induction session')))
             fb_opts = sorted(df['Feedback'].dropna().unique())
-            feedback = st.selectbox("Candidate Intake Feedback", fb_opts, index=get_index(fb_opts, pd_state.get('Feedback')))
+            feedback = st.selectbox("Candidate Intake Feedback", fb_opts,
+                                    index=get_index(fb_opts, pd_state.get('Feedback')))
         with col_eng2:
             tt_opts = sorted(df['Test'].dropna().unique())
-            test_taken = st.selectbox("Initial Test Completed?", tt_opts, index=get_index(tt_opts, pd_state.get('Test')))
+            test_taken = st.selectbox("Initial Test Completed?", tt_opts,
+                                      index=get_index(tt_opts, pd_state.get('Test')))
             fe_opts = sorted(df['Followup Email'].dropna().unique())
-            followup_email = st.selectbox("Follow-up Email Acknowledged?", fe_opts, index=get_index(fe_opts, pd_state.get('Followup Email')))
+            followup_email = st.selectbox("Follow-up Email Acknowledged?", fe_opts,
+                                          index=get_index(fe_opts, pd_state.get('Followup Email')))
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Academic & Experience Details</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Academic & Experience Details</div>',
+            unsafe_allow_html=True)
         col_edu1, col_edu2 = st.columns(2)
         with col_edu1:
             semester = st.number_input("Current Semester", 0, 10, pd_state.get('Semester', 3))
-            year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050, value=pd_state.get('Year of Graduation', 2026))
+            year_of_graduation = st.number_input("Year of Graduation (0 if not graduated)", min_value=0, max_value=2050,
+                                                 value=pd_state.get('Year of Graduation', 2026))
         with col_edu2:
             experience = st.number_input("Professional Experience (years)", 0, 30, pd_state.get('Experience', 3))
 
         st.markdown("<br>", unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1,3,1])
+        c1, c2, c3 = st.columns([1, 3, 1])
         with c1:
             if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
-                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country}, Invoice=invoice, **{"Program Location": program_location}, **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode, Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience, Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken, **{"Followup Email": followup_email})
+                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country},
+                            Invoice=invoice, **{"Program Location": program_location},
+                            **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode,
+                            Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience,
+                            Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken,
+                            **{"Followup Email": followup_email})
                 prev_step()
                 st.rerun()
         with c3:
             if st.button("Next", type="primary", icon=":material/arrow_forward:", use_container_width=True):
-                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country}, Invoice=invoice, **{"Program Location": program_location}, **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode, Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience, Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken, **{"Followup Email": followup_email})
+                update_data(City=city, **{"Mailing State": mailing_state}, **{"Mailing Country": mailing_country},
+                            Invoice=invoice, **{"Program Location": program_location},
+                            **{"Induction session": induction_session}, Feedback=feedback, Payment_mode=payment_mode,
+                            Semester=semester, **{"Year of Graduation": year_of_graduation}, Experience=experience,
+                            Total_Amount=total_amount, Paid_amount=paid_amount, Test=test_taken,
+                            **{"Followup Email": followup_email})
                 next_step()
                 st.rerun()
 
     elif st.session_state.predictor_step == 3:
         st.markdown('<div class="section-header"><h2>Call Inputs & Prediction</h2></div>', unsafe_allow_html=True)
-        
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-phone" style="margin-right:8px;"></i> Call Conversation Signals</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-phone" style="margin-right:8px;"></i> Call Conversation Signals</div>',
+            unsafe_allow_html=True)
         col_sig1, col_sig2 = st.columns(2)
         with col_sig1:
             not_interested = st.checkbox("No Interest in Course", value=pd_state.get('not_interested', False))
-            unreachable_not_connected = st.checkbox("No Response / Unreachable", value=pd_state.get('unreachable_not_connected', False))
-            joined_competitor = st.checkbox("Joined in another institution", value=pd_state.get('joined_competitor', False))
+            unreachable_not_connected = st.checkbox("No Response / Unreachable",
+                                                    value=pd_state.get('unreachable_not_connected', False))
+            joined_competitor = st.checkbox("Joined in another institution",
+                                            value=pd_state.get('joined_competitor', False))
             decision_pending = st.checkbox("Technical Discussion", value=pd_state.get('decision_pending', False))
         with col_sig2:
             financial_issue = st.checkbox("Course fees not affordable", value=pd_state.get('financial_issue', False))
             already_working = st.checkbox("Got placed", value=pd_state.get('already_working', False))
             looking_for_job = st.checkbox("Job hunting, not internship", value=pd_state.get('looking_for_job', False))
 
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Call Notes & Remarks</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Call Notes & Remarks</div>',
+            unsafe_allow_html=True)
         col_txt1, col_txt2 = st.columns(2)
         with col_txt1:
-            call_remarks = st.text_area("Call Remarks (optional)", value=pd_state.get('call_remarks', ""), max_chars=1000, placeholder="Enter recent call remarks...")
+            call_remarks = st.text_area("Call Remarks (optional)", value=pd_state.get('call_remarks', ""),
+                                        max_chars=1000, placeholder="Enter recent call remarks...")
         with col_txt2:
-            call_transcript = st.text_area("Call Transcript (optional)", value=pd_state.get('call_transcript', ""), max_chars=2000, placeholder="Paste full call transcript...")
+            call_transcript = st.text_area("Call Transcript (optional)", value=pd_state.get('call_transcript', ""),
+                                           max_chars=2000, placeholder="Paste full call transcript...")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        c1, c2, c3 = st.columns([1,2,2])
+        c1, c2, c3 = st.columns([1, 2, 2])
         with c1:
             if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
-                update_data(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected, joined_competitor=joined_competitor, financial_issue=financial_issue, already_working=already_working, looking_for_job=looking_for_job, decision_pending=decision_pending, call_remarks=call_remarks, call_transcript=call_transcript)
+                update_data(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected,
+                            joined_competitor=joined_competitor, financial_issue=financial_issue,
+                            already_working=already_working, looking_for_job=looking_for_job,
+                            decision_pending=decision_pending, call_remarks=call_remarks,
+                            call_transcript=call_transcript)
                 prev_step()
                 st.rerun()
         with c3:
-            predict_btn = st.button("Predict Churn Risk", icon=":material/online_prediction:", use_container_width=True, type="primary")
+            predict_btn = st.button("Predict Churn Risk", icon=":material/online_prediction:", use_container_width=True,
+                                    type="primary")
 
         if predict_btn:
-            pd_state.update(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected, joined_competitor=joined_competitor, financial_issue=financial_issue, already_working=already_working, looking_for_job=looking_for_job, decision_pending=decision_pending, call_remarks=call_remarks, call_transcript=call_transcript)
+            pd_state.update(not_interested=not_interested, unreachable_not_connected=unreachable_not_connected,
+                            joined_competitor=joined_competitor, financial_issue=financial_issue,
+                            already_working=already_working, looking_for_job=looking_for_job,
+                            decision_pending=decision_pending, call_remarks=call_remarks,
+                            call_transcript=call_transcript)
 
             total_amount = pd_state.get('Total_Amount', 25000)
             paid_amount = pd_state.get('Paid_amount', 10000)
@@ -2781,7 +2980,7 @@ def page_live_predictor(df, model_data):
             if not is_llm:
                 model_df_input = input_data.copy()
                 model_df_input['role'] = "professional" if experience > 0 else "student"
-                model_df_input['background'] = "tech" if "tech" in education.lower() else "non tech"
+                model_df_input['background'] = "tech" if "tech" in str(education).lower() else "non tech"
 
                 input_df = pd.DataFrame([model_df_input])
                 for col in categorical_features:
@@ -2795,7 +2994,8 @@ def page_live_predictor(df, model_data):
                     processed_input_df = pd.DataFrame(processed_input, columns=feature_columns)
                 processed_input_df = processed_input_df.reindex(columns=feature_columns, fill_value=0)
 
-                final_model = available_models.get(selected_model_name, available_models.get(list(available_models.keys())[0]))
+                final_model = available_models.get(selected_model_name,
+                                                   available_models.get(list(available_models.keys())[0]))
 
             try:
                 if is_llm:
@@ -2805,7 +3005,8 @@ def page_live_predictor(df, model_data):
                     prob = float(llm_result.get("churn_probability", 50.0)) / 100.0
                     pred = 1 if prob >= 0.5 else 0
                     llm_reason = llm_result.get("reason", "Inference processed successfully via LLM rules engine.")
-                    llm_retention = llm_result.get("retention_strategy", "Maintain standard operations tracking playbook.")
+                    llm_retention = llm_result.get("retention_strategy",
+                                                   "Maintain standard operations tracking playbook.")
                     model_display = selected_model_name
                 else:
                     pred_raw = final_model.predict(processed_input_df)
@@ -2818,15 +3019,12 @@ def page_live_predictor(df, model_data):
                     model_display = model_data.get('model_display_name', selected_model_name)
 
                 # --- SUPABASE DATA WRITER ---
-
-                # --- NEW IMPROVED DATA INSIGHT WRITER ---
                 user_ip = st.context.ip_address if st.context.ip_address else "127.0.0.1"
 
                 from streamlit.runtime.scriptrunner import get_script_run_ctx
                 ctx = get_script_run_ctx()
                 current_session_id = ctx.session_id if (ctx and hasattr(ctx, 'session_id')) else "unknown"
 
-                # Look up Candidate ID to link relational views
                 resolved_candidate_id = None
                 if supabase is not None and c_email:
                     try:
@@ -2841,14 +3039,15 @@ def page_live_predictor(df, model_data):
                 if supabase is not None and c_email:
                     try:
                         prev_q = supabase.table("predictions").select("id").eq("email", c_email).order("predicted_at",
-                                                                                                        desc=True).limit(
+                                                                                                       desc=True).limit(
                             1).execute()
-                        if prev_q.data: prev_pred_id = prev_q.data[0]["id"]
+                        if prev_q.data:
+                            prev_pred_id = prev_q.data[0]["id"]
                     except Exception:
                         pass
 
                 db_record = {
-                    "candidate_id": resolved_candidate_id,  # Linking key added
+                    "candidate_id": resolved_candidate_id,
                     "semester": semester, "year_of_graduation": year_of_graduation, "experience": experience,
                     "total_amount": float(total_amount), "paid_amount": float(paid_amount), "course": course,
                     "track_interested": track_interested, "city": city, "mailing_state": mailing_state,
@@ -2912,40 +3111,40 @@ def page_live_predictor(df, model_data):
 
                 with r3:
                     ret_role = db_metrics.get('role', 'professional' if experience > 0 else 'student')
-                    ret_bg = db_metrics.get('background', 'tech' if "tech" in education.lower() else 'non tech')
+                    ret_bg = db_metrics.get('background', 'tech' if "tech" in str(education).lower() else 'non tech')
                     ret_prate = float(db_metrics.get('paid_rate') or derived_paid_rate) * 100
 
                     action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
-                    st.markdown(f"""<div class="candidate-card" style="margin-top:0; height:100%; display:flex; flex-direction:column;">
-                    <div style="font-size:13px; font-weight:700; color:#38bdf8; margin-bottom:5px; text-transform:uppercase;">Database Generated Outputs</div>
-                    <div style="font-size:12px; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
-                    • Computed Role Category: <b style="color:#a78bfa;">{ret_role}</b><br>
-                    • Classified Background Profile: <b style="color:#a78bfa;">{ret_bg}</b><br>
-                    • Actual Remittance Value Rate: <b style="color:#a78bfa;">{ret_prate:.1f}%</b>
-                    </div>
-                    <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
-                    <div style="font-size:12px; color:#e2e8f0; margin-bottom:8px;">
-                    <span style="color:#64748b; font-weight:600;">Reasoning:</span><br>
-                    <i>"{llm_reason}"</i>
-                    </div>
-                    <div style="font-size:12px; color:#38bdf8; margin-bottom:10px; flex-grow:1;">
-                    <span style="color:#64748b; font-weight:600;">Retention Strategy:</span><br>
-                    <b>{llm_retention}</b>
-                    </div>
-                    <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div style="font-size:11px; color:#64748b;">Using {model_display}</div>
-                    <div style="font-size:12px;">{action_req}</div>
-                    </div>
-                    </div>""", unsafe_allow_html=True)
 
-                st.toast("Telemetry matrix updates synced to Supabase.", icon=":material/database:")
+                    st.markdown(f"""<div class="candidate-card" style="margin-top:0; height:100%; display:flex; flex-direction:column;">
+                                <div style="font-size:13px; font-weight:700; color:#38bdf8; margin-bottom:5px; text-transform:uppercase;">Database Generated Outputs</div>
+                                <div style="font-size:12px; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
+                                • Computed Role Category: <b style="color:#a78bfa;">{ret_role}</b><br>
+                                • Classified Background Profile: <b style="color:#a78bfa;">{ret_bg}</b><br>
+                                • Actual Remittance Value Rate: <b style="color:#a78bfa;">{ret_prate:.1f}%</b>
+                                </div>
+                                <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
+                                <div style="font-size:12px; color:#e2e8f0; margin-bottom:8px;">
+                                <span style="color:#64748b; font-weight:600;">Reasoning:</span><br>
+                                <i>"{llm_reason}"</i>
+                                </div>
+                                <div style="font-size:12px; color:#38bdf8; margin-bottom:10px; flex-grow:1;">
+                                <span style="color:#64748b; font-weight:600;">Retention Strategy:</span><br>
+                                <b>{llm_retention}</b>
+                                </div>
+                                <hr style="border-color:rgba(255,255,255,0.1); margin:4px 0;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="font-size:11px; color:#64748b;">Using {model_display}</div>
+                                <div style="font-size:12px;">{action_req}</div>
+                                </div>
+                                </div>""", unsafe_allow_html=True)
+
+                    st.toast("Telemetry matrix updates synced to Supabase.", icon=":material/database:")
             except Exception as e:
                 st.error(f"Prediction Pipeline Faulted: {e}")
 
-
-#─────────────────────────# ─────────────────────────────────────────────
-# PAGE 6 — MODEL PERFORMANCE
+# ─────────────────────────────────────────────
+# PAGE 9 — MODEL PERFORMANCE
 # ─────────────────────────────────────────────
 def page_model_performance(df, model_data):
     st.markdown("""
@@ -3398,7 +3597,7 @@ def page_model_performance(df, model_data):
     else:
         st.info("Feature importance report not found.")
 
-
+# profile
 def page_profile():
     st.markdown(
         '<div class="page-header"><h1><i class="fa-solid fa-user-circle"></i> Executive Profile</h1><p>Manage your account settings and personal info.</p></div>',
@@ -3419,6 +3618,7 @@ def page_profile():
         <h3 style="margin-top:0;">Account Information</h3>
         <p style="margin:5px 0;"><strong>Email ID:</strong> {u.email}</p>
         <p style="margin:5px 0;"><strong>User ID:</strong> {u.id}</p>
+        <p style="margin:5px 0;"><strong>Assigned Access Tier Role:</strong> {st.session_state.get('user_role', 'Salesperson')}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -3480,8 +3680,11 @@ def main():
     try:
         user_session_info = supabase.auth.get_user(st.session_state.get("access_token"))
         logged_in_user_uuid = user_session_info.user.id
+
+        # Double check sync structure of the session role assignment state object
+        if "user_role" not in st.session_state:
+            st.session_state.user_role = user_session_info.user.user_metadata.get("role", "Salesperson")
     except Exception:
-        # Fallback tracking target if session token parsing is unstable
         logged_in_user_uuid = "00000000-0000-0000-0000-000000000000"
 
     # 3. Render right-hand side Profile UI switch toggler
@@ -3512,17 +3715,13 @@ def main():
     # 5. Storage Loader Process Memory Block
     with st.spinner("Loading data..."):
         try:
-            # 1. Fetch profiles dynamically from Supabase database or local backup tables
             raw_df, raw_notes, source_type = load_data()
 
-            # 2. Conditionally preprocess only if data originates from the live database
             if source_type == "database":
                 df, notes = preprocess(raw_df, raw_notes)
             else:
-                # Skip preprocessing since the CSV is already preprocessed by churn_data.py
                 df, notes = raw_df, raw_notes
 
-            # 3. Securely update state context memory for downstream dashboard files
             st.session_state['df'] = df
             st.session_state['notes'] = notes
 
@@ -3534,28 +3733,33 @@ def main():
     model_modified_time = os.path.getmtime(model_path) if os.path.exists(model_path) else None
     model_data = load_model()
 
-    # 6. Master Multi-Page Execution Routing Branch
-    if page == "Overview":
+    # 6. Master Multi-Page Execution Routing Branch with Route-Level Guarding
+    user_role = st.session_state.get("user_role", "Salesperson")
+
+    if page == "Overview" and user_role == "Admin":
         page_overview(df, notes)
-    elif page == "Candidate Explorer":
+    elif page == "Candidate Explorer" and user_role == "Admin":
         page_candidate_explorer(df, notes)
-
+    elif page == "Salesperson Analytics" and user_role == "Admin":  # 🌟 ADDED THIS ROUTE
+        page_salesperson_stats(df, supabase)
     elif page == "Smart Agent Workspace":
-        # RUNS NEW WORKSPACE CONTAINER (Forms, Real-Time KPIs, Smart Task Reminders)
         render_agent_workspace_and_logger(supabase, logged_in_user_uuid)
-
     elif page == "Add New Candidate":
-        # 🌟 ROUTE TO THE INTAKE FORM (Passes Supabase connection context safely)
         render_candidate_entry_form(df, notes)
-
-    elif page == "CRM Notes Analysis":
+    elif page == "CRM Notes Analysis" and user_role == "Admin":
         page_notes_analysis(df, notes)
-    elif page == "Invoice Analysis":
+    elif page == "Invoice Analysis" and user_role == "Admin":
         page_payment_analysis(df)
     elif "Predictor" in page:
-        page_live_predictor(df, model_data)
-    elif "Model Performance" in page:
+        page_live_predictor(df, model_data, supabase)
+    elif "Model Performance" in page and user_role == "Admin":
         page_model_performance(df, model_data)
+    else:
+        # Fallback security redirection route catch-all step
+        st.warning("You don't have authorization permissions to access this page section.")
+        st.session_state.current_page = "Smart Agent Workspace"
+        st.rerun()
+
 
 if __name__ == "__main__":
     main()
