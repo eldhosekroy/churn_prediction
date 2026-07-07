@@ -2682,7 +2682,7 @@ def page_live_predictor(df, model_data, supabase):
 
     if st.session_state.predictor_step == 1:
         st.markdown('<div class="section-header"><h2>Core Details & AI Settings</h2></div>', unsafe_allow_html=True)
-        col_ai, col_ident, col_sync = st.columns([1.5, 2, 0.8])
+        col_ai, col_ident, col_sync = st.columns([1.5, 2, 0.8], vertical_alignment="bottom")
 
         with col_ai:
             selected_model_name = st.selectbox("Select AI Model", options=all_options, index=get_index(all_options,
@@ -2698,7 +2698,6 @@ def page_live_predictor(df, model_data, supabase):
         # PROFILE LOOKUP & AUTOFILL LOGIC
         # ─────────────────────────────────────────────
         with col_sync:
-            st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
             sync_triggered = st.button("Sync Profile", type="primary" , use_container_width=True, icon=":material/sync:")
 
         if sync_triggered and c_email:
