@@ -801,6 +801,80 @@ st.markdown("""
 
     /* Metric delta */
     [data-testid="stMetricDelta"] { font-size: 12px; }
+
+    /* ---------------------------------------------------
+       MOBILE RESPONSIVENESS & ADAPTIVE DESIGN
+       --------------------------------------------------- */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+        .page-header {
+            margin-bottom: 20px !important;
+            padding-bottom: 16px !important;
+        }
+        .page-header h1 {
+            font-size: 24px !important;
+        }
+        .page-header p {
+            font-size: 13px !important;
+        }
+        .kpi-card {
+            height: auto !important;
+            padding: 16px 12px !important;
+            margin-bottom: 12px !important;
+        }
+        .kpi-value {
+            font-size: 28px !important;
+            margin-bottom: 4px !important;
+        }
+        .kpi-title {
+            font-size: 11px !important;
+            margin-bottom: 6px !important;
+        }
+        .kpi-icon {
+            font-size: 20px !important;
+            margin-bottom: 8px !important;
+        }
+        .kpi-sub {
+            font-size: 11px !important;
+        }
+        .section-header {
+            margin: 24px 0 12px 0 !important;
+        }
+        .section-header h2 {
+            font-size: 14px !important;
+        }
+        .prediction-box-churn, .prediction-box-safe {
+            padding: 20px 16px !important;
+        }
+        .pred-label {
+            font-size: 32px !important;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 12px !important;
+            flex-wrap: wrap !important;
+        }
+        .stTabs [data-baseweb="tab"] {
+            padding: 8px 4px !important;
+            font-size: 14px !important;
+        }
+        /* Make sure tables are scrollable on mobile */
+        .stDataFrame {
+            overflow-x: auto !important;
+        }
+        /* Ensure candidate card adjusts padding */
+        .candidate-card {
+            padding: 16px !important;
+        }
+        /* Adjust navigation elements on mobile */
+        .nav-item {
+            padding: 8px 12px !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
