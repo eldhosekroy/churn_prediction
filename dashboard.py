@@ -2907,14 +2907,9 @@ def page_live_predictor(df, model_data, supabase):
         st.markdown(
             '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Call Notes & Remarks</div>',
             unsafe_allow_html=True)
-        col_txt1, col_txt2 = st.columns(2)
-        with col_txt1:
-            call_remarks = st.text_area("Call Remarks (optional)", value=pd_state.get('call_remarks', ""),
-                                        max_chars=1000, placeholder="Enter recent call remarks...")
-        with col_txt2:
-            call_transcript = st.text_area("Call Transcript (optional)", value=pd_state.get('call_transcript', ""),
-                                           max_chars=2000, placeholder="Paste full call transcript...")
-
+        call_transcript = st.text_area("Call Transcript (optional)", value=pd_state.get('call_transcript', ""),
+                                       max_chars=2000, placeholder="Paste full call transcript...")
+        call_remarks = ""
         st.markdown("<br>", unsafe_allow_html=True)
 
         c1, c2, c3 = st.columns([1, 2, 2])
