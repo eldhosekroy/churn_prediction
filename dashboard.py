@@ -1190,7 +1190,7 @@ def page_auth():
                 {svg_logo}
             </div>
             <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-                Executive Portal
+                Admin & Sales Portal
             </div>
         """, unsafe_allow_html=True)
     else:
@@ -1200,7 +1200,7 @@ def page_auth():
                 <span style="font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
             </div>
             <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-                Executive Portal
+                Admin & Sales Portal
             </div>
         """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1217,8 +1217,8 @@ def page_auth():
             st.markdown("""
             <div style="text-align: center; padding: 20px 0;">
                 <i class="fa-solid fa-lock" style="font-size: 32px; color: #38bdf8; margin-bottom: 16px;"></i>
-                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">Executive Login</h1>
-                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Access the secure analytics dashboard</p>
+                <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; margin: 0; color: #f8fafc; font-weight: 700;">System Login</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Access your secure workspace</p>
             </div>
             """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)

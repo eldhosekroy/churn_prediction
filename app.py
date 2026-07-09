@@ -854,7 +854,7 @@ def page_auth():
                 {svg_logo}
             </div>
             <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-                Executive Portal
+                Admin & Sales Portal
             </div>
         """, unsafe_allow_html=True)
     else:
@@ -864,7 +864,7 @@ def page_auth():
                 <span style="font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #38bdf8; vertical-align: top; margin-left: 2px;">AI</span>
             </div>
             <div style="font-family: 'Inter', sans-serif; font-size: 12px; color: #94a3b8; margin-top: 10px; text-transform: uppercase; letter-spacing: 3.5px; font-weight: 500;">
-                Executive Portal
+                Admin & Sales Portal
             </div>
         """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
