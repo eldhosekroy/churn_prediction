@@ -35,10 +35,12 @@ churn_prediction/
 ## Core Features
 
 1. **AI-Powered Streamlit Dashboard (`dashboard.py`)**:
-   - **Overview**: High-level KPIs, churn rates, and data source summaries.
-   - **Candidate Explorer**: Deep-dive into individual candidate risk levels and specific reasons for potential churn.
-   - **Live Predictor**: A dynamic form to input a specific scenario and receive a real-time churn probability and suggested action.
-   - **Supabase Integration**: Automatically logs queries, candidates, and call insights into a Supabase PostgreSQL database.
+   - **Role-Based Access Control (RBAC)**: Secure multi-tier authentication allowing *Admins* to see global analytics and *Salespersons* to access their focused workspaces.
+   - **Salesperson Analytics & Overview**: Dedicated views for admins to track recruiter performance, churn risks per executive, and live system inferences.
+   - **Smart Agent Workspace**: A focused, prioritized task manager for sales executives to track follow-ups and log interactions.
+   - **Candidate Explorer & Live Predictor**: Deep-dive into individual candidate risk levels, input scenarios dynamically, and receive real-time churn probability and suggested actions.
+   - **Mobile Responsive Design**: Clean, adaptive UI elements ensuring the dashboard is perfectly usable on smartphones and tablets.
+   - **Supabase Integration**: Automatically logs queries, candidates, interaction history, and call insights into a Supabase PostgreSQL database.
 
 2. **Call Analyzer Pro (`call_analyzer/`)**:
    - Upload call recordings (MP3, WAV, etc.) or paste transcriptions directly.
