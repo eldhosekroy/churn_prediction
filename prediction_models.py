@@ -2329,13 +2329,12 @@ preprocessor = ColumnTransformer(
         ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
     ])
 
-# --- CORRECTED ORDER: Perform train-test split BEFORE fitting preprocessor ---
 # Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-# Apply preprocessing ONLY to the training features (fit_transform) and then transform test features
-X_train_processed = preprocessor.fit_transform(X_train) # No need toarray() yet for some methods
-X_test_processed = preprocessor.transform(X_test) # No need toarray() yet for some methods
+# Apply preprocessing ONLY to the training features and then transform test features
+X_train_processed = preprocessor.fit_transform(X_train)
+X_test_processed = preprocessor.transform(X_test)
 
 # Convert target variable to numerical (0 for Churned, 1 for Joined) for both train and test
 y_train_processed = y_train.map({'Churned': 0, 'Joined': 1})
@@ -2344,8 +2343,7 @@ y_test_processed = y_test.map({'Churned': 0, 'Joined': 1})
 # Get feature names from the preprocessor
 feature_names = preprocessor.get_feature_names_out()
 
-# Convert X_train_processed (NumPy array) to DataFrame
-# Ensure to convert sparse matrix to dense array using .toarray()
+# Convert X_train_processed to DataFrame
 X_train_processed_df = pd.DataFrame(X_train_processed.toarray(), columns=feature_names, index=y_train_processed.index)
 
 print("Shape of X_train_processed_df:", X_train_processed_df.shape)
@@ -2408,12 +2406,7 @@ plt.xlabel('Class (0: Churned, 1: Joined)')
 plt.ylabel('Count')
 plt.show()
 
-"""### **Evaluation of Balancing Techniques**
-
-
-
-
-"""
+"""### **Evaluation of Balancing Techniques**"""
 
 def resample_train_set(X_train_df, y_train, method='none', random_state=42):
     X_resampled, y_resampled, sample_weights = X_train_df, y_train, None
@@ -2425,18 +2418,18 @@ def resample_train_set(X_train_df, y_train, method='none', random_state=42):
         oversampler = RandomOverSampler(random_state=random_state)
         X_resampled, y_resampled = oversampler.fit_resample(X_train_df, y_train)
         print(f"[DEBUG] Oversample applied. X_resampled shape: {X_resampled.shape}, y_resampled shape: {y_resampled.shape}")
+
     elif method == 'undersample':
         undersampler = RandomUnderSampler(random_state=random_state)
         X_resampled, y_resampled = undersampler.fit_resample(X_train_df, y_train)
         print(f"[DEBUG] Undersample applied. X_resampled shape: {X_resampled.shape}, y_resampled shape: {y_resampled.shape}")
+
     elif method == 'smote':
         smote = SMOTE(random_state=random_state)
         X_resampled, y_resampled = smote.fit_resample(X_train_df, y_train)
         print(f"[DEBUG] SMOTE applied. X_resampled shape: {X_resampled.shape}, y_resampled shape: {y_resampled.shape}")
+
     elif method == 'class_weight':
-        # For class_weight, we don't resample X_train, but compute sample weights
-        # We still use the original X_train, y_train for the model training step
-        # The `compute_class_weight` function takes the original y_train.
         weights = class_weight.compute_class_weight(
             class_weight='balanced',
             classes=np.unique(y_train),
@@ -2450,10 +2443,6 @@ def resample_train_set(X_train_df, y_train, method='none', random_state=42):
 
     # Ensure X_resampled is a DataFrame with column names
     if not isinstance(X_resampled, pd.DataFrame):
-        # We can reconstruct DataFrame using original column names
-        # Note: This might be complex if `X_train_df` is already the processed array.
-        # For this context, we assume X_train_df passed here is already a DataFrame or can provide columns.
-        # A safer approach for the notebook is to convert X_train_processed *before* calling evaluate_balancing_techniques
         pass # This block assumes X_resampled is already a DataFrame or will be converted outside.
 
     return X_resampled, y_resampled, sample_weights
