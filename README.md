@@ -1,8 +1,7 @@
-# ChurnSense AI – Candidate Analytics & Call Analyzer Pro
+# ChurnSense AI – Candidate Analytics
 
 ChurnSense AI is an AI-powered Candidate Churn Prediction & Reason Analysis platform. It leverages machine learning to proactively identify candidates at risk of dropping out (churning) during or before their training/induction sessions. 
 
-Recently, the system has been upgraded to include an advanced **Call Analyzer Pro** tool for transcribing, translating (Malayalam to English), and generating AI-driven insights from call recordings.
 
 ## Project Structure
 
@@ -19,9 +18,6 @@ churn_prediction/
 │   ├── candidates_with_suggested_reasons.csv # Inference outputs and insights
 │   ├── churn_reasons.csv               # Aggregated churn statistics
 │   └── *.png                           # Visualizations (ROC, Confusion Matrix, etc.)
-├── call_analyzer/                      # AI-Powered Call Analysis & Transcription Submodule
-│   ├── app.py                          # Dedicated Streamlit app for call analysis
-│   └── readme.md                       # Documentation for the Call Analyzer
 ├── app.py                              # Legacy Streamlit Dashboard application
 ├── dashboard.py                        # NEW AI-Powered Streamlit Dashboard (Supabase integrated)
 ├── model.py                            # ML Training pipeline and feature engineering
@@ -42,12 +38,7 @@ churn_prediction/
    - **Mobile Responsive Design**: Clean, adaptive UI elements ensuring the dashboard is perfectly usable on smartphones and tablets.
    - **Supabase Integration**: Automatically logs queries, candidates, interaction history, and call insights into a Supabase PostgreSQL database.
 
-2. **Call Analyzer Pro (`call_analyzer/`)**:
-   - Upload call recordings (MP3, WAV, etc.) or paste transcriptions directly.
-   - Automatic language detection and translation (Malayalam to English).
-   - Generates concise call remarks and extracts keywords, entities, and sentiments.
-
-3. **Machine Learning Pipeline (`model.py` & `prediction_models.py`)**:
+2. **Machine Learning Pipeline (`model.py` & `prediction_models.py`)**:
    - Advanced feature engineering: Extracts call durations, frequencies, and NLP keyword flags.
    - Handles class imbalance using modern techniques.
    - Model Evaluation: Compares Logistic Regression, Random Forest, XGBoost, and more, tuning the best model via GridSearchCV.
