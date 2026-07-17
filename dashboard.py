@@ -1429,10 +1429,125 @@ def page_overview(df, notes):
     </div>
     """, unsafe_allow_html=True)
 
-    total       = len(df)
-    churned     = (df['Status'] == 'Churned').sum()
-    active      = total - churned
-    churn_rate  = (churned / total * 100) if total > 0 else 0
+    # ────────────────────────────────────────────────────────
+    # 1. INITIALIZE INTERACTIVE CROSS-FILTER STATE
+    # ────────────────────────────────────────────────────────
+    if 'overview_filters' not in st.session_state:
+        st.session_state.overview_filters = {
+            'Source of lead': None,
+            'Course': None,
+            'background': None,
+            'Mode of Program Joined': None,
+            'role': None,
+            'Induction session': None,
+            'Reason': None
+        }
+
+    # ────────────────────────────────────────────────────────
+    # 2. CAPTURE PLOTLY SELECTIONS BEFORE RENDERING
+    # ────────────────────────────────────────────────────────
+    # We inspect the Plotly chart return states stored in st.session_state
+    # and update our persistent filter queries.
+    rerun_needed = False
+
+    # A. Churn Reasons Selection
+    if "chart_reasons" in st.session_state and st.session_state.chart_reasons:
+        points = st.session_state.chart_reasons.get("selection", {}).get("points", [])
+        new_val = points[0]["y"] if points else None
+        if st.session_state.overview_filters['Reason'] != new_val:
+            st.session_state.overview_filters['Reason'] = new_val
+            rerun_needed = True
+
+    # B. Source of Lead Selection
+    if "chart_source" in st.session_state and st.session_state.chart_source:
+        points = st.session_state.chart_source.get("selection", {}).get("points", [])
+        new_val = points[0]["x"] if points else None
+        if st.session_state.overview_filters['Source of lead'] != new_val:
+            st.session_state.overview_filters['Source of lead'] = new_val
+            rerun_needed = True
+
+    # C. Course Selection
+    if "chart_course" in st.session_state and st.session_state.chart_course:
+        points = st.session_state.chart_course.get("selection", {}).get("points", [])
+        new_val = points[0]["y"] if points else None
+        if st.session_state.overview_filters['Course'] != new_val:
+            st.session_state.overview_filters['Course'] = new_val
+            rerun_needed = True
+
+    # D. Background Selection
+    if "chart_bg" in st.session_state and st.session_state.chart_bg:
+        points = st.session_state.chart_bg.get("selection", {}).get("points", [])
+        new_val = points[0]["label"] if points else None
+        if st.session_state.overview_filters['background'] != new_val:
+            st.session_state.overview_filters['background'] = new_val
+            rerun_needed = True
+
+    # E. Training Mode Selection
+    if "chart_mode" in st.session_state and st.session_state.chart_mode:
+        points = st.session_state.chart_mode.get("selection", {}).get("points", [])
+        new_val = points[0]["x"] if points else None
+        if st.session_state.overview_filters['Mode of Program Joined'] != new_val:
+            st.session_state.overview_filters['Mode of Program Joined'] = new_val
+            rerun_needed = True
+
+    # F. Role Selection
+    if "chart_role" in st.session_state and st.session_state.chart_role:
+        points = st.session_state.chart_role.get("selection", {}).get("points", [])
+        new_val = points[0]["x"] if points else None
+        if st.session_state.overview_filters['role'] != new_val:
+            st.session_state.overview_filters['role'] = new_val
+            rerun_needed = True
+
+    # G. Induction Session Selection
+    if "chart_induction" in st.session_state and st.session_state.chart_induction:
+        points = st.session_state.chart_induction.get("selection", {}).get("points", [])
+        new_val = points[0]["x"] if points else None
+        if st.session_state.overview_filters['Induction session'] != new_val:
+            st.session_state.overview_filters['Induction session'] = new_val
+            rerun_needed = True
+
+    # If an interaction changed a state, rerun the app with the new filters applied
+    if rerun_needed:
+        st.rerun()
+
+    # Helper function to clear active filters
+    def reset_filters():
+        for key in st.session_state.overview_filters.keys():
+            st.session_state.overview_filters[key] = None
+
+    # ────────────────────────────────────────────────────────
+    # 3. APPLY ACTIVE INTERACTIVE CROSS-FILTERS TO DATAFRAME
+    # ────────────────────────────────────────────────────────
+    filtered_df = df.copy()
+    active_filter_chips = []
+
+    for col, val in st.session_state.overview_filters.items():
+        if val is not None:
+            if col == 'Reason':
+                if 'final_inferred_reason' in filtered_df.columns:
+                    mapped_reasons = filtered_df['final_inferred_reason'].dropna().astype(str).apply(
+                        normalize_reason_label)
+                    filtered_df = filtered_df[mapped_reasons == val]
+            else:
+                filtered_df = filtered_df[filtered_df[col] == val]
+            active_filter_chips.append(f"**{col}**: {val}")
+
+    # Active Filters Notification Banner
+    if active_filter_chips:
+        col_banner, col_reset = st.columns([4, 1])
+        with col_banner:
+            st.markdown(f"⚡ **Active Filters:** " + "  •  ".join(active_filter_chips))
+        with col_reset:
+            if st.button("Clear Filters", type="primary", use_container_width=True, icon=":material/filter_alt_off:"):
+                reset_filters()
+                st.rerun()
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # Calculate overall KPI metrics on the currently cross-filtered view
+    total = len(filtered_df)
+    churned = (filtered_df['Status'] == 'Churned').sum()
+    active = total - churned
+    churn_rate = (churned / total * 100) if total > 0 else 0
     total_notes = len(notes) if notes is not None else 0
 
     # ── KPI Cards ────────────────────────────────
@@ -1443,7 +1558,7 @@ def page_overview(df, notes):
             <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
             <div class="kpi-title">Total Candidates</div>
             <div class="kpi-value kpi-blue" style="color:#60a5fa">{total}</div>
-            <div class="kpi-sub">Enrolled in system</div>
+            <div class="kpi-sub">Filtered view</div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.markdown(f"""
@@ -1467,7 +1582,7 @@ def page_overview(df, notes):
             <div class="kpi-icon"><i class="fa-solid fa-chart-line" style="color:#fbbf24"></i></div>
             <div class="kpi-title">Churn Rate</div>
             <div class="kpi-value" style="color:#fbbf24">{churn_rate:.1f}%</div>
-            <div class="kpi-sub">Of all candidates</div>
+            <div class="kpi-sub">In current view</div>
         </div>""", unsafe_allow_html=True)
     with c5:
         st.markdown(f"""
@@ -1480,23 +1595,34 @@ def page_overview(df, notes):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Top Suggested Churn Reasons (from model outputs) ─────────
-    if 'final_inferred_reason' in df.columns:
+    # ── FORCE CHURNED-ONLY SUBSET FOR ALL GRAPH VISUALIZATIONS ──
+    churned_subset = filtered_df[filtered_df['Status'] == 'Churned'].copy()
+
+    # ────────────────────────────────────────────────────────
+    # 4. CHART RENDERING & STATE-BINDING TRIGGERS
+    # ────────────────────────────────────────────────────────
+
+    # ── Top Suggested Churn Reasons (Churned Only) ─────────
+    if 'final_inferred_reason' in filtered_df.columns:
         try:
-            unique_churn = df[df['Status'] == 'Churned'].drop_duplicates(subset=['Contact Id'])
+            unique_churn = churned_subset.drop_duplicates(subset=['Contact Id'])
             mapped_reasons = unique_churn['final_inferred_reason'].dropna().astype(str).apply(normalize_reason_label)
             reasons = mapped_reasons.value_counts().reset_index()
             reasons.columns = ['Reason', 'Count']
 
             if not reasons.empty:
-                st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>', unsafe_allow_html=True)
-                fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count', color_continuous_scale=['#f87171','#fbbf24','#60a5fa'])
+                st.markdown('<div class="section-header"><h2>Top Suggested Churn Reasons</h2></div>',
+                            unsafe_allow_html=True)
+                fig_reasons = px.bar(reasons, x='Count', y='Reason', orientation='h', text='Count', color='Count',
+                                     color_continuous_scale=['#f87171', '#fbbf24', '#60a5fa'])
                 fig_reasons.update_layout(**theme(height=300, showlegend=False))
-                st.plotly_chart(fig_reasons, use_container_width=True)
+
+                # Bind directly to key in st.session_state
+                st.plotly_chart(fig_reasons, use_container_width=True, on_select="rerun", key="chart_reasons")
         except Exception:
             pass
 
-    # ── Row 1: Donut + Source ─────────────────────
+    # ── Row 1: Donut (Distribution Overview) + Source (Churned Only) ───────────
     col1, col2 = st.columns([1, 1.6])
 
     with col1:
@@ -1505,90 +1631,90 @@ def page_overview(df, notes):
             labels=['Active', 'Churned'],
             values=[active, int(churned)],
             hole=0.65,
-            marker=dict(colors=[COLOR_ACTIVE, COLOR_CHURN],
-                        line=dict(color='rgba(0,0,0,0)', width=0)),
+            marker=dict(colors=[COLOR_ACTIVE, COLOR_CHURN], line=dict(color='rgba(0,0,0,0)', width=0)),
             textinfo='percent+label',
             textfont=dict(size=13, color='#e2e8f0'),
             hovertemplate="<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>"
         ))
-        fig.add_annotation(text=f"<b>{churn_rate:.1f}%</b><br>Churn Rate",
-                           x=0.5, y=0.5, showarrow=False,
+        fig.add_annotation(text=f"<b>{churn_rate:.1f}%</b><br>Churn Rate", x=0.5, y=0.5, showarrow=False,
                            font=dict(size=15, color='#e2e8f0', family='Inter'))
-        fig.update_layout(**theme(height=310,
-                                  showlegend=True,
-                                  legend=dict(orientation='h', y=-0.1, x=0.25)))
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(**theme(height=310, showlegend=True, legend=dict(orientation='h', y=-0.1, x=0.25)))
+
+        st.plotly_chart(fig, use_container_width=True)  # Keep static to prevent loop interference
 
     with col2:
-        st.markdown('<div class="section-header"><h2>Churn by Candidate Source</h2></div>', unsafe_allow_html=True)
-        src = df.groupby(['Source of lead', 'Status']).size().reset_index(name='Count')
-        src['Status'] = src['Status'].map({'Churned': 'Churned'})
-        fig2 = px.bar(src, x='Source of lead', y='Count', color='Status',
-                      color_discrete_map={'Churned': COLOR_CHURN},
-                      barmode='group', text='Count')
+        st.markdown('<div class="section-header"><h2>Churn by Candidate Source (Churned Only)</h2></div>',
+                    unsafe_allow_html=True)
+        src = churned_subset.groupby(['Source of lead']).size().reset_index(name='Count')
+        fig2 = px.bar(src, x='Source of lead', y='Count', text='Count',
+                      color_discrete_sequence=[COLOR_CHURN])
         fig2.update_traces(textfont_size=11, textposition='outside')
-        fig2.update_layout(**theme(height=310, showlegend=True))
-        st.plotly_chart(fig2, use_container_width=True)
+        fig2.update_layout(**theme(height=310, showlegend=False))
 
-    # ── Row 2: Course + Background + Mode ─────────
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig2, use_container_width=True, on_select="rerun", key="chart_source")
+
+    # ── Row 2: Course (Churned) + Background (Churned) + Mode (Churned) ─────────
     col3, col4, col5 = st.columns(3)
 
     with col3:
-        st.markdown('<div class="section-header"><h2>By Course</h2></div>', unsafe_allow_html=True)
-        course_churn = df[df['Status'] == 'Churned']['Course'].value_counts().reset_index()
+        st.markdown('<div class="section-header"><h2>By Course (Churned Only)</h2></div>', unsafe_allow_html=True)
+        course_churn = churned_subset['Course'].value_counts().reset_index()
         course_churn.columns = ['Course', 'Churned']
         fig3 = px.bar(course_churn, x='Churned', y='Course', orientation='h',
-                      color='Churned', color_continuous_scale=['#4c1d95','#f87171'])
-        fig3.update_layout(**theme(height=280, showlegend=False,
-                                   coloraxis_showscale=False))
-        st.plotly_chart(fig3, use_container_width=True)
+                      color='Churned', color_continuous_scale=['#4c1d95', '#f87171'])
+        fig3.update_layout(**theme(height=280, showlegend=False, coloraxis_showscale=False))
+
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig3, use_container_width=True, on_select="rerun", key="chart_course")
 
     with col4:
-        st.markdown('<div class="section-header"><h2>Background Split</h2></div>', unsafe_allow_html=True)
-        bg = df.groupby(['background', 'Status']).size().reset_index(name='Count')
-        bg['Status'] = bg['Status'].map({'Churned': 'Churned'})
-        fig4 = px.pie(bg, names='background', values='Count',
-                      color='background', hole=0.5,
+        st.markdown('<div class="section-header"><h2>Background Split (Churned Only)</h2></div>',
+                    unsafe_allow_html=True)
+        bg = churned_subset.groupby(['background']).size().reset_index(name='Count')
+        fig4 = px.pie(bg, names='background', values='Count', color='background', hole=0.5,
                       color_discrete_sequence=PALETTE)
         fig4.update_layout(**theme(height=280, showlegend=True))
-        st.plotly_chart(fig4, use_container_width=True)
+
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig4, use_container_width=True, on_select="rerun", key="chart_bg")
 
     with col5:
-        st.markdown('<div class="section-header"><h2>Training Mode</h2></div>', unsafe_allow_html=True)
-        mode_data = df.groupby(['Mode of Program Joined', 'Status']).size().reset_index(name='Count')
-        mode_data['Status'] = mode_data['Status'].map({'Churned': 'Churned'})
-        fig5 = px.bar(mode_data, x='Mode of Program Joined', y='Count', color='Status',
-                      color_discrete_map={'Churned': COLOR_CHURN},
-                      barmode='stack')
-        fig5.update_layout(**theme(height=280))
-        st.plotly_chart(fig5, use_container_width=True)
+        st.markdown('<div class="section-header"><h2>Training Mode (Churned Only)</h2></div>', unsafe_allow_html=True)
+        mode_data = churned_subset.groupby(['Mode of Program Joined']).size().reset_index(name='Count')
+        fig5 = px.bar(mode_data, x='Mode of Program Joined', y='Count', text='Count',
+                      color_discrete_sequence=[COLOR_CHURN])
+        fig5.update_traces(textposition='outside')
+        fig5.update_layout(**theme(height=280, showlegend=False))
 
-    # ── Row 3: Role + Inferred Reason ───────────────
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig5, use_container_width=True, on_select="rerun", key="chart_mode")
+
+    # ── Row 3: Role (Churned) + Induction Session (Churned) ───────────────
     col6, col7 = st.columns(2)
     with col6:
-        st.markdown('<div class="section-header"><h2>Candidate Role vs Churn</h2></div>', unsafe_allow_html=True)
-        ind = df.groupby(['role', 'Status']).size().reset_index(name='Count')
-        ind['Status'] = ind['Status'].map({'Churned': 'Churned'})
-        fig6 = px.bar(ind, x='role', y='Count', color='Status',
-                      color_discrete_map={'Churned': COLOR_CHURN},
-                      barmode='group', text='Count')
+        st.markdown('<div class="section-header"><h2>Candidate Role (Churned Only)</h2></div>', unsafe_allow_html=True)
+        ind = churned_subset.groupby(['role']).size().reset_index(name='Count')
+        fig6 = px.bar(ind, x='role', y='Count', text='Count',
+                      color_discrete_sequence=[COLOR_CHURN])
         fig6.update_traces(textfont_size=11, textposition='outside')
-        fig6.update_layout(**theme(height=290))
-        st.plotly_chart(fig6, use_container_width=True)
+        fig6.update_layout(**theme(height=290, showlegend=False))
+
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig6, use_container_width=True, on_select="rerun", key="chart_role")
 
     with col7:
-        st.markdown('<div class="section-header"><h2>Induction Session Attended vs Churn</h2></div>', unsafe_allow_html=True)
-        fb = df.groupby(['Induction session', 'Status']).size().reset_index(name='Count')
-        # Limit to top 10 reasons to avoid chart clutter
+        st.markdown('<div class="section-header"><h2>Induction Session (Churned Only)</h2></div>',
+                    unsafe_allow_html=True)
+        fb = churned_subset.groupby(['Induction session']).size().reset_index(name='Count')
         fb = fb.sort_values('Count', ascending=False).head(20)
-        fb['Status'] = fb['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
-        fig7 = px.bar(fb, x='Induction session', y='Count', color='Status',
-                      color_discrete_map={'Avtive': COLOR_ACTIVE,'Churned': COLOR_CHURN},
-                      barmode='group', text='Count')
+        fig7 = px.bar(fb, x='Induction session', y='Count', text='Count',
+                      color_discrete_sequence=[COLOR_CHURN])
         fig7.update_traces(textfont_size=11, textposition='outside')
-        fig7.update_layout(**theme(height=290))
-        st.plotly_chart(fig7, use_container_width=True)
+        fig7.update_layout(**theme(height=290, showlegend=False))
 
+        # Bind directly to key in st.session_state
+        st.plotly_chart(fig7, use_container_width=True, on_select="rerun", key="chart_induction")
 
 # ─────────────────────────────────────────────
 # PAGE 2 — CANDIDATE EXPLORER
@@ -2624,21 +2750,105 @@ def page_payment_analysis(df):
         st.warning("Invoice data not available.")
         return
 
+    # ────────────────────────────────────────────────────────
+    # 1. INITIALIZE INTERACTIVE CROSS-FILTER STATE
+    # ────────────────────────────────────────────────────────
+    if 'payment_filters' not in st.session_state:
+        st.session_state.payment_filters = {
+            'Invoice': None,
+            'Course': None
+        }
+
+    # ────────────────────────────────────────────────────────
+    # 2. CAPTURE PLOTLY SELECTIONS BEFORE RENDERING
+    # ────────────────────────────────────────────────────────
+    rerun_needed = False
+
+    # A. DONUT CHART SELECTION (Captures slice clicks)
+    if "payment_chart_inv_pie" in st.session_state and st.session_state.payment_chart_inv_pie:
+        points = st.session_state.payment_chart_inv_pie.get("selection", {}).get("points", [])
+        if points:
+            # 💡 FIX: Pie slices expose their values inside 'label'
+            pt = points[0]
+            new_val = pt.get("label")
+            if st.session_state.payment_filters['Invoice'] != new_val:
+                st.session_state.payment_filters['Invoice'] = new_val
+                rerun_needed = True
+        else:
+            if st.session_state.payment_filters['Invoice'] is not None:
+                st.session_state.payment_filters['Invoice'] = None
+                rerun_needed = True
+
+    # B. STACKED COURSE BAR SELECTION
+    if "payment_chart_course" in st.session_state and st.session_state.payment_chart_course:
+        points = st.session_state.payment_chart_course.get("selection", {}).get("points", [])
+        if points:
+            pt = points[0]
+            clicked_course = pt.get("x")
+
+            # Map the exact stacked color color-index group
+            clicked_invoice_status = pt.get("customdata", [None])[0] if "customdata" in pt else None
+            if not clicked_invoice_status and "legendgroup" in pt:
+                clicked_invoice_status = pt.get("legendgroup")
+
+            if st.session_state.payment_filters['Course'] != clicked_course or st.session_state.payment_filters[
+                'Invoice'] != clicked_invoice_status:
+                st.session_state.payment_filters['Course'] = clicked_course
+                if clicked_invoice_status:
+                    st.session_state.payment_filters['Invoice'] = clicked_invoice_status
+                rerun_needed = True
+        else:
+            if st.session_state.payment_filters['Course'] is not None or st.session_state.payment_filters[
+                'Invoice'] is not None:
+                st.session_state.payment_filters['Course'] = None
+                st.session_state.payment_filters['Invoice'] = None
+                rerun_needed = True
+
+    # C. CHURN STATUS BAR SELECTION
+    if "payment_chart_churn" in st.session_state and st.session_state.payment_chart_churn:
+        points = st.session_state.payment_chart_churn.get("selection", {}).get("points", [])
+        if points:
+            clicked_invoice = points[0].get("x")
+            if st.session_state.payment_filters['Invoice'] != clicked_invoice:
+                st.session_state.payment_filters['Invoice'] = clicked_invoice
+                rerun_needed = True
+        else:
+            if st.session_state.payment_filters['Invoice'] is not None:
+                st.session_state.payment_filters['Invoice'] = None
+                rerun_needed = True
+
+    # Apply variable updates instantly
+    if rerun_needed:
+        st.rerun()
+
+    # ────────────────────────────────────────────────────────
+    # 3. APPLY ACTIVE FILTER MATRIX SILENTLY (No Visible Chips)
+    # ────────────────────────────────────────────────────────
     df_inv = df.copy()
+
+    # Standardize column strings cleanly
     df_inv['Invoice'] = df_inv['Invoice'].fillna('No Invoice').astype(str).str.title().str.strip()
-    
+
+    # Filters execute in background seamlessly
+    for col, val in st.session_state.payment_filters.items():
+        if val is not None:
+            df_inv = df_inv[df_inv[col] == val]
+
+    # ────────────────────────────────────────────────────────
+    # 4. CALCULATE DYNAMIC KPI METRICS
+    # ────────────────────────────────────────────────────────
     total_cands = len(df_inv)
-    paid_count  = df_inv['Paid_amount'].sum()
-    sent_count  = df_inv['Total_Amount'].sum()
-    no_inv      = len(df_inv[df_inv['Invoice'].isin(['No', 'No Invoice', 'Nan'])])
-    paid_rate   = paid_count / sent_count * 100 if sent_count > 0 else 0
+    paid_count = df_inv['Paid_amount'].sum()
+    sent_count = df_inv['Total_Amount'].sum()
+    no_inv = len(df_inv[df_inv['Invoice'].isin(['No', 'No Invoice', 'Nan', 'Nan Invoice'])])
+    paid_rate = paid_count / sent_count * 100 if sent_count > 0 else 0
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
             <div class="kpi-title">Total Candidates</div>
             <div class="kpi-value" style="color:#60a5fa; font-size:26px;">{total_cands}</div>
-            <div class="kpi-sub">Total records</div></div>""", unsafe_allow_html=True)
+            <div class="kpi-sub">Filtered records</div></div>""", unsafe_allow_html=True)
     with k2:
         st.markdown(f"""<div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-check-circle" style="color:#34d399"></i></div>
             <div class="kpi-title">Paid Invoices</div>
@@ -2657,36 +2867,49 @@ def page_payment_analysis(df):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ────────────────────────────────────────────────────────
+    # 5. CHART RENDERING
+    # ────────────────────────────────────────────────────────
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown('<div class="section-header"><h2>Invoice Status Distribution</h2></div>', unsafe_allow_html=True)
         inv_counts = df_inv['Invoice'].value_counts().reset_index()
         inv_counts.columns = ['Invoice Status', 'Count']
+
+        # We explicitly supply 'Invoice Status' as the slice target names
         fig = px.pie(inv_counts, names='Invoice Status', values='Count', hole=0.4,
                      color_discrete_sequence=['#34d399', '#f87171', '#fbbf24', '#a78bfa', '#94a3b8'])
         fig.update_layout(**theme(height=300, showlegend=True))
-        st.plotly_chart(fig, use_container_width=True)
+
+        st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="payment_chart_inv_pie")
 
     with col2:
         st.markdown('<div class="section-header"><h2>Invoice Status by Course</h2></div>', unsafe_allow_html=True)
-        pm = df_inv.groupby(['Course','Invoice']).size().reset_index(name='Count')
+        pm = df_inv.groupby(['Course', 'Invoice']).size().reset_index(name='Count')
+
+        # We bind 'Invoice' to customdata so the selection matrix maps stacks cleanly
         fig2 = px.bar(pm, x='Course', y='Count', color='Invoice',
+                      custom_data=['Invoice'],
                       color_discrete_sequence=['#34d399', '#fbbf24', '#f87171', '#94a3b8'],
                       barmode='stack')
         fig2.update_layout(**theme(height=300, showlegend=True))
-        st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown('<div class="section-header"><h2>Churn Distribution by Invoice Status</h2></div>', unsafe_allow_html=True)
+        st.plotly_chart(fig2, use_container_width=True, on_select="rerun", key="payment_chart_course")
+
+    # Bottom Row: Churn Status Grouping Chart
+    st.markdown('<div class="section-header"><h2>Churn Distribution by Invoice Status</h2></div>',
+                unsafe_allow_html=True)
     inv_churn = df_inv.groupby(['Invoice', 'Status']).size().reset_index(name='Count')
-    inv_churn['Status'] = inv_churn['Status'].map({'Joined':'Active', 'Churned':'Churned'})
+    inv_churn['Status'] = inv_churn['Status'].map({'Joined': 'Active', 'Churned': 'Churned'})
+
     fig3 = px.bar(inv_churn, x='Invoice', y='Count', color='Status',
-                  color_discrete_map={'Active':COLOR_ACTIVE,'Churned':COLOR_CHURN},
+                  color_discrete_map={'Active': COLOR_ACTIVE, 'Churned': COLOR_CHURN},
                   barmode='group', text='Count')
     fig3.update_traces(textfont_size=12, textposition='outside')
     fig3.update_layout(**theme(height=360))
-    st.plotly_chart(fig3, use_container_width=True)
 
+    st.plotly_chart(fig3, use_container_width=True, on_select="rerun", key="payment_chart_churn")
 
 # ─────────────────────────────────────────────
 # PAGE 8 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
