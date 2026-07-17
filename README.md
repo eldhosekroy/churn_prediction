@@ -1,6 +1,15 @@
 # ChurnSense AI – Candidate Analytics
 
-ChurnSense AI is an AI-powered Candidate Churn Prediction & Reason Analysis platform. It leverages machine learning to proactively identify candidates at risk of dropping out (churning) during or before their training/induction sessions. 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rp2churn.streamlit.app/)
+
+## About This Project
+
+**ChurnSense AI** is an intelligent Candidate Churn Prediction & Analytics platform designed for admission teams and sales executives. 
+It leverages advanced machine learning techniques to proactively identify candidates at risk of dropping out (churning) during or before their training and induction sessions. 
+
+By analyzing candidate demographics, call logs, interaction history, and payment behavior, the system empowers sales teams to take data-driven, preventative actions to improve retention.
+
+**🌐 Live Demo:** [https://rp2churn.streamlit.app/](https://rp2churn.streamlit.app/)
 
 
 ## Project Structure
