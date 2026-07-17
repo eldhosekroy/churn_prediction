@@ -912,7 +912,7 @@ def load_data():
 
     # ── Layer 1: Attempt Absolute Admin Supabase Pull ──
     try:
-        # 🌟 FORCE BEYOND RLS: Explicitly use the admin service-role key client.
+
         # If your keys are bound to 'supabase_service', use it directly to ignore security walls.
         if supabase_service is not None:
             read_client = supabase_service
@@ -1021,7 +1021,7 @@ def preprocess(df, notes):
     df['Course'] = df['Course'].fillna('Unknown')
     df['Invoice'] = df['Invoice'].fillna('No')
 
-    # ── 🌟 TROUBLESHOOTING FIX: RENAME, TYPECAST & FILL NULL VALUES ──
+
     df['final_inferred_reason'] = df['final_inferred_reason'].fillna('N/A')
         # 2. Rename directly to 'final_inferred_reason' for your charts/analysis pages
     #df = df.rename(columns={'background_override': 'final_inferred_reason'})
@@ -1235,7 +1235,7 @@ def page_auth():
                             st.session_state.logged_in = True
                             st.session_state.user_email = res.user.email
 
-                            # 🌟 Extract role from user metadata (defaults to Salesperson if not defined)
+                            #  Extract role from user metadata (defaults to Salesperson if not defined)
                             user_metadata = res.user.user_metadata if res.user.user_metadata else {}
                             st.session_state.user_role = user_metadata.get("role", "Salesperson")
 
@@ -1267,7 +1267,7 @@ def page_auth():
                 reg_email = st.text_input("Email Address", key="reg_email")
                 reg_password = st.text_input("Password", type="password", key="reg_password")
 
-                # 🌟 Added Role selection drop-down directly into Registration Form
+
                 reg_role = st.selectbox("Select Account Tier", ["Salesperson", "Admin"], index=0, key="reg_role")
 
                 st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
@@ -1275,7 +1275,7 @@ def page_auth():
                 if submitted_reg:
                     if reg_email and reg_password:
                         try:
-                            # 🌟 Pass the selected role metadata directly into Supabase User Sign Up configuration
+                            #  Pass the selected role metadata directly into Supabase User Sign Up configuration
                             res = supabase.auth.sign_up({
                                 "email": reg_email,
                                 "password": reg_password,
@@ -1321,19 +1321,19 @@ def sidebar():
             </div>
             """, unsafe_allow_html=True)
 
-        # 🌟 Define access configurations depending on assigned roles
+
         user_role = st.session_state.get("user_role", "Salesperson")
 
         if user_role == "Admin":
             pages = [
                 ("Overview", ":material/dashboard:"),
                 ("Candidate Explorer", ":material/search:"),
-                ("Salesperson Analytics", ":material/analytics:"),  # 🌟 ADDED THIS
-                ("Smart Agent Workspace", ":material/assignment_turned_in:"),
-                ("Add New Candidate", ":material/person_add:"),
+                ("Salesperson Analytics", ":material/analytics:"),
                 ("CRM Notes Analysis", ":material/call:"),
                 ("Invoice Analysis", ":material/payments:"),
                 ("Live Predictor", ":material/online_prediction:"),
+                ("Add New Candidate", ":material/person_add:"),
+                ("Agents Workspace", ":material/assignment_turned_in:"),
                 ("Model Performance", ":material/insights:")
             ]
         else:
@@ -1354,7 +1354,7 @@ def sidebar():
                 st.session_state.show_profile = False
                 st.rerun()
 
-        # 🌟 DYNAMICALLY HIGHLIGHT BUTTON BASED ON VISIBLE INDEX POSITION
+
         active_idx = [p[0] for p in pages].index(st.session_state.current_page) + 2
         st.markdown(f"""
         <style>
@@ -3866,9 +3866,9 @@ def main():
         page_overview(df, notes)
     elif page == "Candidate Explorer" and user_role == "Admin":
         page_candidate_explorer(df, notes)
-    elif page == "Salesperson Analytics" and user_role == "Admin":  # 🌟 ADDED THIS ROUTE
+    elif page == "Salesperson Analytics" and user_role == "Admin":
         page_salesperson_stats(df, supabase)
-    elif page == "Smart Agent Workspace":
+    elif page == "Agents Workspace":
         render_agent_workspace_and_logger(supabase, logged_in_user_uuid)
     elif page == "Add New Candidate":
         render_candidate_entry_form(df, notes)
