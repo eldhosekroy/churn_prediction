@@ -48,115 +48,6 @@ from supabase import create_client, Client
 
 load_dotenv(override=True)
 
-# ─────────────────────────────────────────────
-# LLM INTEGRATION MODULE
-# ─────────────────────────────────────────────
-def generate_prompt(candidate_data):
-    return f"""
-You are an expert HR Retention Analyst. Analyze this candidate's profile and predict their likelihood of churning (dropping out / requesting a refund).
-
-Candidate Details:
-- Experience: {candidate_data.get('Experience')}
-- Semester: {candidate_data.get('Semester')}
-- Year of Graduation: {candidate_data.get('Year of Graduation')}
-- Education: {candidate_data.get('Course')}
-- Source of Lead: {candidate_data.get('Source of lead')}
-- Batch Assigned: {candidate_data.get('Batch Assigned to')}
-- Track Interested: {candidate_data.get('Track Interested')}
-- Gender: {candidate_data.get('Gender')}
-
-Risk Flags:
-- Has Financial Issues: {'Yes' if candidate_data.get('financial_issue') else 'No'}
-- Not Interested: {'Yes' if candidate_data.get('not_interested') else 'No'}
-- Already Working / Placed: {'Yes' if candidate_data.get('already_working') else 'No'}
-- Decision Pending: {'Yes' if candidate_data.get('decision_pending') else 'No'}
-- Unreachable / Not Connected: {'Yes' if candidate_data.get('unreachable_not_connected') else 'No'}
-- Payment Done: {'Yes' if candidate_data.get('Invoice_binary') else 'No'}
-
-Respond strictly in valid JSON format with exactly the following three keys:
-{{
-  "churn_probability": <A float between 0.0 and 100.0>,
-  "reason": "<A concise 1-2 sentence explanation of why they are at risk or safe>",
-  "retention_strategy": "<A highly actionable 1-2 sentence strategy on how to keep this specific candidate>"
-}}
-"""
-
-def parse_json_response(text):
-    text = text.strip()
-    match = re.search(r"```(?:json)?(.*?)```", text, re.DOTALL)
-    if match:
-        text = match.group(1).strip()
-    
-    try:
-        data = json.loads(text)
-        return data
-    except Exception as e:
-        return {
-            "churn_probability": 50.0,
-            "reason": f"Failed to parse LLM response. Raw output: {text[:100]}...",
-            "retention_strategy": "Please try again or select a different AI model."
-        }
-
-def predict_with_gemini(candidate_data):
-    import google.generativeai as genai
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in .env")
-    genai.configure(api_key=api_key)
-    # Using 1.5-flash as 2.5 might not be available in older library version
-    model = genai.GenerativeModel("gemini-2.5-flash")
-    prompt = generate_prompt(candidate_data)
-    response = model.generate_content(prompt)
-    return parse_json_response(response.text)
-
-def predict_with_groq(candidate_data):
-    from groq import Groq
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set in .env")
-    client = Groq(api_key=api_key)
-    prompt = generate_prompt(candidate_data)
-    
-    chat_completion = client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.1-8b-instant",
-        response_format={"type": "json_object"}
-    )
-    return json.loads(chat_completion.choices[0].message.content)
-
-def predict_with_hf(candidate_data):
-    api_key = os.getenv("HUGGINGFACE_API_KEY")
-    if not api_key:
-        raise ValueError("HUGGINGFACE_API_KEY is not set in .env")
-    
-    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    prompt = generate_prompt(candidate_data)
-    
-    formatted_prompt = f"<s>[INST] {prompt} [/INST]"
-    
-    payload = {
-        "inputs": formatted_prompt,
-        "parameters": {"max_new_tokens": 250, "temperature": 0.1, "return_full_text": False}
-    }
-    
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise ValueError(f"Hugging Face API Error: {response.text}")
-        
-    result_text = response.json()[0]['generated_text'].strip()
-    return parse_json_response(result_text)
-
-def get_llm_prediction(model_name, candidate_data):
-    if "Gemini" in model_name:
-        return predict_with_gemini(candidate_data)
-    elif "Groq" in model_name:
-        return predict_with_groq(candidate_data)
-    elif "Hugging Face" in model_name:
-        return predict_with_hf(candidate_data)
-    else:
-        raise ValueError(f"Unknown LLM Model Selected: {model_name}")
-
 
 # Load company logo SVG
 try:
@@ -167,477 +58,6 @@ except Exception:
 
 url: str = os.environ.get("SUPABASE_URL", "")
 key: str = os.environ.get("SUPABASE_KEY", "")
-
-# 1. INITIALIZE SUPABASE ROUTINES
-@st.cache_resource
-def init_supabase() -> Client:
-    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
-    if not url or not key:
-        return None
-    return create_client(url, key)
-
-@st.cache_resource
-def init_supabase_service() -> Client:
-    """Creates a service-role Supabase client that bypasses RLS for unrestricted data reads.
-    Requires SUPABASE_SERVICE_KEY in .env — get it from:
-    Supabase Dashboard -> Project Settings -> API -> service_role secret
-    """
-    try:
-        url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
-        service_key = os.environ.get("SUPABASE_SERVICE_KEY") or st.secrets.get("SUPABASE_SERVICE_KEY", "")
-    except Exception:
-        url = os.environ.get("SUPABASE_URL", "")
-        service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
-        # 3. Crash early with a helpful explanation if strings are missing
-        if not url:
-            raise ValueError("Initialization Failed: 'SUPABASE_URL' could not be resolved from secrets or environment.")
-        if not service_key:
-            raise ValueError(
-                "Initialization Failed: 'SUPABASE_SERVICE_ROLE_KEY' could not be resolved from secrets or environment.")
-
-        try:
-            return create_client(url, service_key)
-        except Exception as init_err:
-            raise RuntimeError(f"Failed to establish Supabase client connection: {init_err}")
-    return create_client(url, service_key)
-
-supabase = init_supabase()
-supabase_service = init_supabase_service()  # None if service key not configured
-
-
-# 2. ADD RISK ANALYSIS HELPER
-def identify_risk_factors(input_data: dict) -> dict:
-    risk_factors = {}
-    total = float(input_data.get('Total_Amount') or 0.0)
-    paid = float(input_data.get('Paid_amount') or 0.0)
-    paid_rate = float(input_data.get('Paid_Rate') or 0.0)
-
-    if paid_rate < 0.4 or (total > 0 and (paid / total) < 0.4):
-        risk_factors["low_payment_rate"] = True
-    if total > 50000:
-        risk_factors["high_total_amount"] = True
-    if input_data.get('Test') == "No":
-        risk_factors["no_test_completed"] = True
-    if input_data.get('Followup Email') == "No":
-        risk_factors["no_followup_engagement"] = True
-    if int(input_data.get('Experience') or 0) == 0:
-        risk_factors["zero_experience"] = True
-    if input_data.get('Mode of Program Joined') == "Online":
-        risk_factors["online_program"] = True
-    if input_data.get('Feedback') and "poor" in str(input_data.get('Feedback')).lower():
-        risk_factors["negative_feedback"] = True
-
-    return risk_factors if risk_factors else {"general_risk": True}
-
-
-def log_crm_call_interaction(
-    email: str, duration_sec: int, agent_name: str, direction: str,
-    owner_id: str, remark_cat: str = None,
-    outcomes_list: list = None, summary_text: str = None, interest: str = "medium",
-    followup_req: bool = False,
-    next_followup_str: str = None, priority: str = None
-    ):
-    """Resolves transactional key bindings and writes communication history logs."""
-
-
-    try:
-        # A. Resolve mandatory candidate_id (UUID) via email tracking keys
-        candidate_query = supabase_service.table("candidates").select("id").eq("email", email).limit(1).execute()
-        if not candidate_query.data:
-            raise ValueError(f"No candidate record found matching email: '{email}'")
-
-        candidate_uuid = candidate_query.data[0]["id"]
-
-        # B. Grab latest prediction reference string if available
-        prediction_uuid = None
-        pred_query = supabase_service.table("predictions").select("id").eq("email", email).order("predicted_at", desc=True).limit(1).execute()
-        if pred_query.data:
-            prediction_uuid = pred_query.data[0]["id"]
-
-        # C. Text analytics sentiment calculation
-        if summary_text:
-            joy_words = ['interested', 'excited', 'yes', 'perfect', 'join', 'good', 'agree']
-            sad_words = ['expensive', 'cancel', 'no', 'busy', 'unable', 'drop', 'bad']
-            lower_text = summary_text.lower()
-            pos = sum(1 for w in joy_words if w in lower_text)
-            neg = sum(1 for w in sad_words if w in lower_text)
-            sentiment_score = round((pos - neg) / (pos + neg), 2) if (pos + neg) > 0 else 0.0
-        else:
-            sentiment_score = 0.0
-
-        # D. Assemble call interaction configuration block
-        call_payload = {
-            "candidate_id": candidate_uuid,
-            "prediction_id": prediction_uuid,
-            "owner_id": owner_id,                    # <-- FIX: Added mapping directly here
-            "call_duration": int(duration_sec),
-            "call_agent": agent_name,                # Passes the resolved label text
-            "call_direction": direction.lower().strip(),
-            "outcomes": outcomes_list,
-            "remark_category": remark_cat if remark_cat else None,
-            "transcript_summary": summary_text,
-            "sentiment_score": float(sentiment_score),
-            "interest_level": interest.lower().strip(),
-            "followup_required": bool(followup_req),
-            "next_followup_date": next_followup_str if followup_req else None,
-            "followup_priority": priority.lower().strip() if (followup_req and priority) else None
-        }
-
-        supabase_service.table("calls").insert(call_payload).execute()
-        return True, "Success"
-
-    except ValueError as val_err:
-        print(f"Validation Error: {val_err}")
-        return False, str(val_err)
-    except Exception as db_err:
-        print(f"Call logging exception: {db_err}")
-        return False, f"Database error: {db_err}"
-
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-
-def live_groq_pipeline(text, api_key):
-    if not text.strip():
-        return None
-
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
-    allowed_outcomes = [
-        "not_interested", "unreachable", "joined_competitor",
-        "financial_issue", "already_working", "looking_for_job",
-        "decision_pending", "converted"
-    ]
-
-    prompt = f"""
-    You are an expert recruitment call analyzer. Analyze this transcript content: "{text}"
-
-    Perform the following tasks:
-    1. Translate the text into clear English if it's in Malayalam.
-    2. Write a 1-2 sentence Summary indicating if the candidate will join or not, extracting the primary reason for churn if they decline.
-    3. Categorize the overall call into exactly ONE of these allowed database outcome tags: {allowed_outcomes}
-
-    Return your output strictly in this JSON layout:
-    {{
-        "summary": "1-2 sentence final verdict summary goes here",
-        "call_outcome": "one_of_the_allowed_tags_here"
-    }}
-    """
-
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {
-                "role": "system",
-                "content": f"You are a precise data extractor. You must output strictly in JSON format. The 'call_outcome' key MUST match one of these tokens exactly: {allowed_outcomes}."
-            },
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"},
-        "max_tokens": 400
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        if response.status_code == 200:
-            return json.loads(response.json()["choices"][0]["message"]["content"])
-        else:
-            st.error(f"Groq Error: {response.text}")
-            return None
-    except Exception as e:
-        st.error(f"Network Error: {str(e)}")
-        return None
-
-def parse_gemini_response(response_data):
-    if not isinstance(response_data, dict):
-        return None
-
-    text = None
-    if 'output' in response_data:
-        output = response_data['output']
-        if isinstance(output, list) and output:
-            first = output[0]
-            if isinstance(first, dict):
-                content = first.get('content', first)
-            else:
-                content = first
-            if isinstance(content, list):
-                text = ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in content)
-            else:
-                text = str(content)
-    elif 'choices' in response_data:
-        choices = response_data['choices']
-        if isinstance(choices, list) and choices:
-            choice = choices[0]
-            text = choice.get('message', {}).get('content') or choice.get('text')
-    return text
-
-
-def parse_json_like(text):
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    result = {}
-    for line in text.splitlines():
-        if ':' in line:
-            key, value = line.split(':', 1)
-            result[key.strip().lower()] = value.strip()
-    return result if result else None
-
-
-def normalize_reason_label(text):
-    if not text:
-        return None
-    normalized = text.strip().lower()
-    mappings = {
-        'Financial issues': ['financial issue', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
-        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
-        'Joined another institution': ['joined another', 'joined competitor', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
-        'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
-        'Already working': ['already working'],
-        'Looking for job': ['looking for job/internship'],
-        'Other': ['other', 'unknown', 'unclear']
-    }
-
-    for label, keywords in mappings.items():
-        if any(k in normalized for k in keywords):
-            return label
-
-    normalized_single = normalized.replace('\n', ' ').strip()
-    return normalized_single.title() if normalized_single else 'Other'
-
-
-def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    details = []
-    if isinstance(candidate_info, dict):
-        details.append("Candidate details:")
-        for key in ['Source', 'Education', 'Background', 'Role', 'Current_status', 'Stream', 'Course', 'Mode', 'Payment_Method', 'Executive_Team', 'Induction_Session', 'Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator', 'Days_Since_Payment', 'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration', 'Call_Frequency', 'Executive_Experience', 'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']:
-            if key in candidate_info and candidate_info[key] is not None:
-                details.append(f"- {key}: {candidate_info[key]}")
-    else:
-        details = ["Candidate details: Not available"]
-
-    details.append("\nCall details:")
-    details.append(f"- Feedback: {feedback_text or 'None'}")
-    details.append(f"- Call remarks: {remarks_text or 'None'}")
-    if transcript_text:
-        details.append(f"- Call transcript: {transcript_text}")
-
-    prompt = (
-            "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
-            "Your task is to analyze candidate profile details and communication logs context to formulate a concise, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
-            "Value of the 'reason' key in the output JSON MUST be a comprehensive, brief sentence or maximum three sentences explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, transcript, remarks, may bold the main reason for churning.\n"
-            "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
-            "Strict Format Constraint:\n"
-            "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
-            "Candidate Data context:\n" + "\n".join(details)
-    )
-    return prompt
-
-
-def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY') or os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        return {'status': 'Gemini unavailable', 'error': 'API key missing'}
-
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-    
-    clean_model_name = model_name
-    if clean_model_name.startswith('models/'):
-        clean_model_name = clean_model_name[len('models/'):]
-
-    # If a prohibited/legacy model is specified, fall back to the modern gemini-2.5-flash
-    if any(m in clean_model_name.lower() for m in ['1.5-flash', '1.5-pro', 'gemini-pro', '2.0-flash', '2.0-pro']):
-        clean_model_name = 'gemini-2.5-flash'
-
-    prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-
-    import time
-    last_err = None
-    response_text = None
-
-    # Implement exponential backoff retries to combat transient 503 errors
-    for attempt in range(1, 4):
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(clean_model_name)
-
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            response_text = response.text
-            last_err = None
-            break
-        except Exception as e:
-            last_err = e
-            if attempt < 3:
-                time.sleep(2 ** attempt)
-
-    if last_err:
-        return {'status': 'Fallback heuristic', 'error': str(last_err)}
-
-    if not response_text:
-        return {'status': 'Fallback heuristic', 'error': 'Empty response from model'}
-
-    raw_text = response_text.strip()
-    if raw_text.startswith("```"):
-        lines = raw_text.splitlines()
-        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-            raw_text = "\n".join(lines[1:-1])
-
-    parsed = parse_json_like(raw_text)
-    if parsed is None:
-        parsed = {}
-
-    # Extract detailed reason directly, do not map it into a 1-word label here
-    reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-    return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
-
-def heuristic_recommendation(reason_label):
-    mapping = {
-        'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
-        'Lack of interest': 'Re-engage with personalized course benefits, clarify learning outcomes, and offer a second consultation call.',
-        'Joined another institution': 'Reach out with retention incentives, compare program strengths, and propose a unique value-added offer.',
-        'Communication gaps': 'Increase outreach frequency, confirm contact details, and assign a dedicated counselor for follow-up.',
-        'Other': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.'
-    }
-    return mapping.get(reason_label, mapping['Other'])
-
-def call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    groq_api_key = os.getenv('GROQ_API_KEY')
-    if not groq_api_key:
-        return {'status': 'Groq unavailable', 'error': 'Groq API key missing'}
-    try:
-        from groq import Groq
-    except ImportError:
-        return {'status': 'Groq unavailable', 'error': 'groq package not installed'}
-
-    try:
-        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-        client = Groq(api_key=groq_api_key)
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are an expert HR analyst analyzing candidate churn data. Respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'."},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.3,
-            max_tokens=256
-        )
-        response_text = chat_completion.choices[0].message.content.strip()
-        raw_text = response_text
-        if raw_text.startswith("```"):
-            lines = raw_text.splitlines()
-            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-                raw_text = "\n".join(lines[1:-1])
-
-        parsed = parse_json_like(raw_text)
-        if not parsed:
-            parsed = {}
-        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-        return {'status': 'AI (Groq)', 'reason': reason, 'recommendation': recommendation}
-    except Exception as e:
-        return {'status': 'Groq failed', 'error': str(e)}
-
-
-def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
-    hf_api_key = os.getenv('HUGGINGFACE_API_KEY') or os.getenv('HF_TOKEN')
-    if not hf_api_key:
-        return {'status': 'HuggingFace unavailable', 'error': 'Hugging Face API key missing'}
-    try:
-        from huggingface_hub import InferenceClient
-    except ImportError:
-        return {'status': 'HuggingFace unavailable', 'error': 'huggingface_hub package not installed'}
-
-    try:
-        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
-        client = InferenceClient(api_key=hf_api_key)
-        response = client.text_generation(
-            prompt=prompt + "\nJSON output:",
-            model="mistralai/Mistral-7B-Instruct-v0.2",
-            max_new_tokens=256,
-            temperature=0.3
-        )
-        response_text = response.strip()
-        raw_text = response_text
-        if raw_text.startswith("```"):
-            lines = raw_text.splitlines()
-            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-                raw_text = "\n".join(lines[1:-1])
-
-        parsed = parse_json_like(raw_text)
-        if not parsed:
-            parsed = {}
-        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
-        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
-        return {'status': 'AI (Hugging Face)', 'reason': reason, 'recommendation': recommendation}
-    except Exception as e:
-        return {'status': 'HuggingFace failed', 'error': str(e)}
-
-def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None, preferred_ai="Auto"):
-    errors = []
-    
-    if preferred_ai in ["Auto (Fallback)", "Gemini"]:
-        api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-        if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
-            return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
-        if api_response and 'error' in api_response:
-            errors.append(f"Gemini: {api_response['error']}")
-            
-    if preferred_ai in ["Auto (Fallback)", "Groq"]:
-        groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-        if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
-            return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
-        if groq_response and 'error' in groq_response:
-            errors.append(f"Groq: {groq_response['error']}")
-            
-    if preferred_ai in ["Auto (Fallback)", "Hugging Face"]:
-        hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
-        if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
-            return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
-        if hf_response and 'error' in hf_response:
-            errors.append(f"Hugging Face: {hf_response['error']}")
-
-    error_context = " | ".join(errors) if errors else 'Unknown AI failure'
-    text = ''
-    if remarks_text:
-        text += str(remarks_text).lower() + ' '
-    if feedback_text:
-        text += str(feedback_text).lower()
-
-    if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
-         reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
-         label_key = 'Financial issues'
-    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
-         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
-         label_key = 'Lack of interest'
-    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
-         reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
-         label_key = 'Joined another institution'
-    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
-         reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
-         label_key = 'Communication gaps'
-    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
-         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
-         label_key = 'Lack of interest'
-    else:
-         reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
-         label_key = 'Other'
-
-    return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
-
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -990,30 +410,82 @@ st.markdown("""
 
 
 # ─────────────────────────────────────────────
+# PLOTLY THEME DEFAULTS
+# ─────────────────────────────────────────────
+PLOTLY_THEME = dict(
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font=dict(family='Inter', color='#94a3b8', size=12),
+    xaxis=dict(gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
+    yaxis=dict(gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
+    margin=dict(l=20, r=20, t=40, b=20),
+)
+
+# Default legend style applied everywhere
+_LEGEND_DEFAULTS = dict(bgcolor='rgba(0,0,0,0)', font=dict(color='#94a3b8'))
+
+def theme(**overrides):
+    """Return PLOTLY_THEME merged with any per-chart overrides.
+    Handles 'legend' specially so callers can pass legend=dict(...)
+    without a duplicate-keyword error."""
+    merged = dict(PLOTLY_THEME)
+    if 'legend' in overrides:
+        leg = dict(_LEGEND_DEFAULTS)   # start with defaults
+        leg.update(overrides.pop('legend'))  # layer caller's settings on top
+        merged['legend'] = leg
+    else:
+        merged['legend'] = _LEGEND_DEFAULTS
+    merged.update(overrides)
+    return merged
+COLOR_ACTIVE = '#34d399'
+COLOR_CHURN  = '#f87171'
+PALETTE      = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#3b82f6','#ec4899','#f97316','#84cc16']
+
+
+
+# 1. INITIALIZE SUPABASE ROUTINES
+@st.cache_resource
+def init_supabase() -> Client:
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    if not url or not key:
+        return None
+    return create_client(url, key)
+
+@st.cache_resource
+def init_supabase_service() -> Client:
+    """Creates a service-role Supabase client that bypasses RLS for unrestricted data reads.
+    Requires SUPABASE_SERVICE_KEY in .env — get it from:
+    Supabase Dashboard -> Project Settings -> API -> service_role secret
+    """
+    try:
+        url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
+        service_key = os.environ.get("SUPABASE_SERVICE_KEY") or st.secrets.get("SUPABASE_SERVICE_KEY", "")
+    except Exception:
+        url = os.environ.get("SUPABASE_URL", "")
+        service_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+        # 3. Crash early with a helpful explanation if strings are missing
+        if not url:
+            raise ValueError("Initialization Failed: 'SUPABASE_URL' could not be resolved from secrets or environment.")
+        if not service_key:
+            raise ValueError(
+                "Initialization Failed: 'SUPABASE_SERVICE_ROLE_KEY' could not be resolved from secrets or environment.")
+
+        try:
+            return create_client(url, service_key)
+        except Exception as init_err:
+            raise RuntimeError(f"Failed to establish Supabase client connection: {init_err}")
+    return create_client(url, service_key)
+
+supabase = init_supabase()
+supabase_service = init_supabase_service()  # None if service key not configured
+
+# ─────────────────────────────────────────────
 # DATA LOADING & PREPROCESSING
-# (Replicates model.py logic — files untouched)
 # ─────────────────────────────────────────────
 
 INPUT_DIR = "./data/"
 OUTPUT_DIR = "./output/"
-
-#@st.cache_data(ttl=60)
-#def load_data():
-    # Load the processed dataset with inferred churn and reasons
-#    df_path = os.path.join(OUTPUT_DIR, "enrolled_processed.csv")
-#    notes_path = os.path.join(OUTPUT_DIR, "notes_processed.csv")
-    
-#    if os.path.exists(df_path):
-#        df = pd.read_csv(df_path)
-#    else:
-#        df = pd.DataFrame()
-        
-#    if os.path.exists(notes_path):
-#        notes = pd.read_csv(notes_path)
-#    else:
-#        notes = pd.DataFrame()
-        
-#    return df, notes
 
 @st.cache_data(ttl=2)
 def load_data():
@@ -1099,17 +571,6 @@ def load_data():
 
     return df, notes, "csv"
 
-
-@st.cache_data
-def load_churn_reasons():
-    # Deprecated/Not needed anymore, returning same df for compatibility
-    return None, None
-
-
-    # Data is already preprocessed by churn_data.py.
-    # We just ensure certain columns exist to avoid KeyError in UI
-
-
 @st.cache_data
 def preprocess(df, notes):
     """
@@ -1131,14 +592,7 @@ def preprocess(df, notes):
     df['Course'] = df['Course'].fillna('Unknown')
     df['Invoice'] = df['Invoice'].fillna('No')
 
-
     df['final_inferred_reason'] = df['final_inferred_reason'].fillna('N/A')
-        # 2. Rename directly to 'final_inferred_reason' for your charts/analysis pages
-    #df = df.rename(columns={'background_override': 'final_inferred_reason'})
-
-
-    # Ensure it is explicitly typed as object/string in the pandas schema
-    #df['final_inferred_reason'] = df['final_inferred_reason'].astype(str)
 
     # ── 2. DYNAMIC 'role' DERIVATION ──
     def assign_role(row):
@@ -1256,37 +710,601 @@ def balance_method_description(balance_method):
     return descriptions.get(str(balance_method).lower(), 'Selected from validation F1 during model training.')
 
 
-# ─────────────────────────────────────────────
-# PLOTLY THEME DEFAULTS
-# ─────────────────────────────────────────────
-PLOTLY_THEME = dict(
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font=dict(family='Inter', color='#94a3b8', size=12),
-    xaxis=dict(gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
-    yaxis=dict(gridcolor='rgba(255,255,255,0.06)', showgrid=True, zeroline=False),
-    margin=dict(l=20, r=20, t=40, b=20),
-)
+#  ADD RISK ANALYSIS HELPER
+def identify_risk_factors(input_data: dict) -> dict:
+    risk_factors = {}
+    total = float(input_data.get('Total_Amount') or 0.0)
+    paid = float(input_data.get('Paid_amount') or 0.0)
+    paid_rate = float(input_data.get('Paid_Rate') or 0.0)
 
-# Default legend style applied everywhere
-_LEGEND_DEFAULTS = dict(bgcolor='rgba(0,0,0,0)', font=dict(color='#94a3b8'))
+    if paid_rate < 0.4 or (total > 0 and (paid / total) < 0.4):
+        risk_factors["low_payment_rate"] = True
+    if total > 50000:
+        risk_factors["high_total_amount"] = True
+    if input_data.get('Test') == "No":
+        risk_factors["no_test_completed"] = True
+    if input_data.get('Followup Email') == "No":
+        risk_factors["no_followup_engagement"] = True
+    if int(input_data.get('Experience') or 0) == 0:
+        risk_factors["zero_experience"] = True
+    if input_data.get('Mode of Program Joined') == "Online":
+        risk_factors["online_program"] = True
+    if input_data.get('Feedback') and "poor" in str(input_data.get('Feedback')).lower():
+        risk_factors["negative_feedback"] = True
 
-def theme(**overrides):
-    """Return PLOTLY_THEME merged with any per-chart overrides.
-    Handles 'legend' specially so callers can pass legend=dict(...)
-    without a duplicate-keyword error."""
-    merged = dict(PLOTLY_THEME)
-    if 'legend' in overrides:
-        leg = dict(_LEGEND_DEFAULTS)   # start with defaults
-        leg.update(overrides.pop('legend'))  # layer caller's settings on top
-        merged['legend'] = leg
+    return risk_factors if risk_factors else {"general_risk": True}
+
+
+def log_crm_call_interaction(
+    email: str, duration_sec: int, agent_name: str, direction: str,
+    owner_id: str, remark_cat: str = None,
+    outcomes_list: list = None, summary_text: str = None, interest: str = "medium",
+    followup_req: bool = False,
+    next_followup_str: str = None, priority: str = None
+    ):
+    """Resolves transactional key bindings and writes communication history logs."""
+
+
+    try:
+        # A. Resolve mandatory candidate_id (UUID) via email tracking keys
+        candidate_query = supabase_service.table("candidates").select("id").eq("email", email).limit(1).execute()
+        if not candidate_query.data:
+            raise ValueError(f"No candidate record found matching email: '{email}'")
+
+        candidate_uuid = candidate_query.data[0]["id"]
+
+        # B. Grab latest prediction reference string if available
+        prediction_uuid = None
+        pred_query = supabase_service.table("predictions").select("id").eq("email", email).order("predicted_at", desc=True).limit(1).execute()
+        if pred_query.data:
+            prediction_uuid = pred_query.data[0]["id"]
+
+        # C. Text analytics sentiment calculation
+        if summary_text:
+            joy_words = ['interested', 'excited', 'yes', 'perfect', 'join', 'good', 'agree']
+            sad_words = ['expensive', 'cancel', 'no', 'busy', 'unable', 'drop', 'bad']
+            lower_text = summary_text.lower()
+            pos = sum(1 for w in joy_words if w in lower_text)
+            neg = sum(1 for w in sad_words if w in lower_text)
+            sentiment_score = round((pos - neg) / (pos + neg), 2) if (pos + neg) > 0 else 0.0
+        else:
+            sentiment_score = 0.0
+
+        # D. Assemble call interaction configuration block
+        call_payload = {
+            "candidate_id": candidate_uuid,
+            "prediction_id": prediction_uuid,
+            "owner_id": owner_id,                    # <-- FIX: Added mapping directly here
+            "call_duration": int(duration_sec),
+            "call_agent": agent_name,                # Passes the resolved label text
+            "call_direction": direction.lower().strip(),
+            "outcomes": outcomes_list,
+            "remark_category": remark_cat if remark_cat else None,
+            "transcript_summary": summary_text,
+            "sentiment_score": float(sentiment_score),
+            "interest_level": interest.lower().strip(),
+            "followup_required": bool(followup_req),
+            "next_followup_date": next_followup_str if followup_req else None,
+            "followup_priority": priority.lower().strip() if (followup_req and priority) else None
+        }
+
+        supabase_service.table("calls").insert(call_payload).execute()
+        return True, "Success"
+
+    except ValueError as val_err:
+        print(f"Validation Error: {val_err}")
+        return False, str(val_err)
+    except Exception as db_err:
+        print(f"Call logging exception: {db_err}")
+        return False, f"Database error: {db_err}"
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+def live_groq_pipeline(text, api_key):
+    if not text.strip():
+        return None
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    allowed_outcomes = [
+        "not_interested", "unreachable", "joined_competitor",
+        "financial_issue", "already_working", "looking_for_job",
+        "decision_pending", "converted"
+    ]
+
+    prompt = f"""
+    You are an expert recruitment call analyzer. Analyze this transcript content: "{text}"
+
+    Perform the following tasks:
+    1. Translate the text into clear English if it's in Malayalam.
+    2. Write a 1-2 sentence Summary indicating if the candidate will join or not, extracting the primary reason for churn if they decline.
+    3. Categorize the overall call into exactly ONE of these allowed database outcome tags: {allowed_outcomes}
+
+    Return your output strictly in this JSON layout:
+    {{
+        "summary": "1-2 sentence final verdict summary goes here",
+        "call_outcome": "one_of_the_allowed_tags_here"
+    }}
+    """
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {
+                "role": "system",
+                "content": f"You are a precise data extractor. You must output strictly in JSON format. The 'call_outcome' key MUST match one of these tokens exactly: {allowed_outcomes}."
+            },
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 400
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        if response.status_code == 200:
+            return json.loads(response.json()["choices"][0]["message"]["content"])
+        else:
+            st.error(f"Groq Error: {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Network Error: {str(e)}")
+        return None
+
+def parse_gemini_response(response_data):
+    if not isinstance(response_data, dict):
+        return None
+
+    text = None
+    if 'output' in response_data:
+        output = response_data['output']
+        if isinstance(output, list) and output:
+            first = output[0]
+            if isinstance(first, dict):
+                content = first.get('content', first)
+            else:
+                content = first
+            if isinstance(content, list):
+                text = ''.join(item.get('text', '') if isinstance(item, dict) else str(item) for item in content)
+            else:
+                text = str(content)
+    elif 'choices' in response_data:
+        choices = response_data['choices']
+        if isinstance(choices, list) and choices:
+            choice = choices[0]
+            text = choice.get('message', {}).get('content') or choice.get('text')
+    return text
+
+
+def parse_json_like(text):
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    result = {}
+    for line in text.splitlines():
+        if ':' in line:
+            key, value = line.split(':', 1)
+            result[key.strip().lower()] = value.strip()
+    return result if result else None
+
+
+def normalize_reason_label(text):
+    if not text:
+        return None
+    normalized = text.strip().lower()
+    mappings = {
+        'Financial issues': ['financial issue', 'financial', 'payment', 'pay', 'fee', 'emi', 'installment', 'finance'],
+        'Lack of interest': ['lack of interest', 'not interested', 'no interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested'],
+        'Joined another institution': ['joined another', 'joined competitor', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere'],
+        'Communication gaps': ['communication gaps', 'no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding'],
+        'Already working': ['already working'],
+        'Looking for job': ['looking for job/internship'],
+        'Other': ['other', 'unknown', 'unclear']
+    }
+
+    for label, keywords in mappings.items():
+        if any(k in normalized for k in keywords):
+            return label
+
+    normalized_single = normalized.replace('\n', ' ').strip()
+    return normalized_single.title() if normalized_single else 'Other'
+
+
+def build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    details = []
+    if isinstance(candidate_info, dict):
+        details.append("Candidate details:")
+        for key in ['Source', 'Education', 'Background', 'Role', 'Current_status', 'Stream', 'Course', 'Mode', 'Payment_Method', 'Executive_Team', 'Induction_Session', 'Experience', 'Career_gap', 'Total_Amount', 'Paid_amount', 'Payment_Ratio', 'Zero_Payment', 'Negative_Feedback', 'High_Risk_Indicator', 'Days_Since_Payment', 'Total_Calls', 'Unique_Executives', 'Total_Call_Duration', 'Avg_Call_Duration', 'Max_Call_Duration', 'Min_Call_Duration', 'Call_Frequency', 'Executive_Experience', 'has_interest', 'has_no_response', 'has_payment_discussion', 'has_technical_discussion']:
+            if key in candidate_info and candidate_info[key] is not None:
+                details.append(f"- {key}: {candidate_info[key]}")
     else:
-        merged['legend'] = _LEGEND_DEFAULTS
-    merged.update(overrides)
-    return merged
-COLOR_ACTIVE = '#34d399'
-COLOR_CHURN  = '#f87171'
-PALETTE      = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#3b82f6','#ec4899','#f97316','#84cc16']
+        details = ["Candidate details: Not available"]
+
+    details.append("\nCall details:")
+    details.append(f"- Feedback: {feedback_text or 'None'}")
+    details.append(f"- Call remarks: {remarks_text or 'None'}")
+    if transcript_text:
+        details.append(f"- Call transcript: {transcript_text}")
+
+    prompt = (
+            "You are an expert AI candidate churn analyst for an IT professional training academy.\n"
+            "Your task is to analyze candidate profile details and communication logs context to formulate a concise, logical, and personalized churn reason explanation alongside actionable recommendations.\n"
+            "Value of the 'reason' key in the output JSON MUST be a comprehensive, brief sentence or maximum three sentences explaining specifically why this candidate is churning, incorporating facts from their profile, payment details, transcript, remarks, may bold the main reason for churning, use the main keywords like financial issue, joined competitor, already working like common issue keywords.\n"
+            "Value of the 'recommendation' key should be a highly logical, customized recovery plan based on their situation.\n\n"
+            "Strict Format Constraint:\n"
+            "You MUST respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'. Do not include any standard prefixes, Markdown formatting blocks like ```json, or other notes. It must be clean, parsable JSON text.\n\n"
+            "Candidate Data context:\n" + "\n".join(details)
+    )
+    return prompt
+
+
+def call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY') or os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return {'status': 'Gemini unavailable', 'error': 'API key missing'}
+
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+    
+    clean_model_name = model_name
+    if clean_model_name.startswith('models/'):
+        clean_model_name = clean_model_name[len('models/'):]
+
+    # If a prohibited/legacy model is specified, fall back to the modern gemini-2.5-flash
+    if any(m in clean_model_name.lower() for m in ['1.5-flash', '1.5-pro', 'gemini-pro', '2.0-flash', '2.0-pro']):
+        clean_model_name = 'gemini-2.5-flash'
+
+    prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+
+    import time
+    last_err = None
+    response_text = None
+
+    # Implement exponential backoff retries to combat transient 503 errors
+    for attempt in range(1, 4):
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(clean_model_name)
+
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            response_text = response.text
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+
+    if last_err:
+        return {'status': 'Fallback heuristic', 'error': str(last_err)}
+
+    if not response_text:
+        return {'status': 'Fallback heuristic', 'error': 'Empty response from model'}
+
+    raw_text = response_text.strip()
+    if raw_text.startswith("```"):
+        lines = raw_text.splitlines()
+        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+            raw_text = "\n".join(lines[1:-1])
+
+    parsed = parse_json_like(raw_text)
+    if parsed is None:
+        parsed = {}
+
+    # Extract detailed reason directly, do not map it into a 1-word label here
+    reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+    recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+    return {'status': 'AI (Gemini)', 'reason': reason, 'recommendation': recommendation}
+
+def heuristic_recommendation(reason_label):
+    mapping = {
+        'Financial issues': 'Offer flexible payment plans, scholarships, or budget-friendly EMI options and follow up on affordability concerns.',
+        'Lack of interest': 'Re-engage with personalized course benefits, clarify learning outcomes, and offer a second consultation call.',
+        'Joined another institution': 'Reach out with retention incentives, compare program strengths, and propose a unique value-added offer.',
+        'Communication gaps': 'Increase outreach frequency, confirm contact details, and assign a dedicated counselor for follow-up.',
+        'Other': 'Investigate the candidate details further and provide a customized recovery plan based on the latest call context.'
+    }
+    return mapping.get(reason_label, mapping['Other'])
+
+def call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    groq_api_key = os.getenv('GROQ_API_KEY')
+    if not groq_api_key:
+        return {'status': 'Groq unavailable', 'error': 'Groq API key missing'}
+    try:
+        from groq import Groq
+    except ImportError:
+        return {'status': 'Groq unavailable', 'error': 'groq package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = Groq(api_key=groq_api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are an expert HR analyst analyzing candidate churn data. Respond ONLY with a clean JSON object containing exactly two keys: 'reason' and 'recommendation'."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.3,
+            max_tokens=256
+        )
+        response_text = chat_completion.choices[0].message.content.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Groq)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'Groq failed', 'error': str(e)}
+
+
+def call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None):
+    hf_api_key = os.getenv('HUGGINGFACE_API_KEY') or os.getenv('HF_TOKEN')
+    if not hf_api_key:
+        return {'status': 'HuggingFace unavailable', 'error': 'Hugging Face API key missing'}
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError:
+        return {'status': 'HuggingFace unavailable', 'error': 'huggingface_hub package not installed'}
+
+    try:
+        prompt = build_gemini_prompt(candidate_info, remarks_text, feedback_text, transcript_text)
+        client = InferenceClient(api_key=hf_api_key)
+        response = client.text_generation(
+            prompt=prompt + "\nJSON output:",
+            model="mistralai/Mistral-7B-Instruct-v0.2",
+            max_new_tokens=256,
+            temperature=0.3
+        )
+        response_text = response.strip()
+        raw_text = response_text
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                raw_text = "\n".join(lines[1:-1])
+
+        parsed = parse_json_like(raw_text)
+        if not parsed:
+            parsed = {}
+        reason = (parsed.get('reason') or parsed.get('reason_label') or raw_text).strip()
+        recommendation = parsed.get('recommendation') or parsed.get('action') or ''
+        return {'status': 'AI (Hugging Face)', 'reason': reason, 'recommendation': recommendation}
+    except Exception as e:
+        return {'status': 'HuggingFace failed', 'error': str(e)}
+
+def extract_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text=None, preferred_ai="Auto"):
+    errors = []
+    
+    if preferred_ai in ["Auto (Fallback)", "Gemini"]:
+        api_response = call_gemini_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if api_response and api_response.get('status') == 'AI (Gemini)' and api_response.get('reason'):
+            return api_response['reason'], api_response.get('recommendation', ''), api_response['status']
+        if api_response and 'error' in api_response:
+            errors.append(f"Gemini: {api_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Groq"]:
+        groq_response = call_groq_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if groq_response and groq_response.get('status') == 'AI (Groq)' and groq_response.get('reason'):
+            return groq_response['reason'], groq_response.get('recommendation', ''), groq_response['status']
+        if groq_response and 'error' in groq_response:
+            errors.append(f"Groq: {groq_response['error']}")
+            
+    if preferred_ai in ["Auto (Fallback)", "Hugging Face"]:
+        hf_response = call_huggingface_reason_and_recommendation(candidate_info, remarks_text, feedback_text, transcript_text)
+        if hf_response and hf_response.get('status') == 'AI (Hugging Face)' and hf_response.get('reason'):
+            return hf_response['reason'], hf_response.get('recommendation', ''), hf_response['status']
+        if hf_response and 'error' in hf_response:
+            errors.append(f"Hugging Face: {hf_response['error']}")
+
+    error_context = " | ".join(errors) if errors else 'Unknown AI failure'
+    text = ''
+    if remarks_text:
+        text += str(remarks_text).lower() + ' '
+    if feedback_text:
+        text += str(feedback_text).lower()
+
+    if any(k in text for k in ['pay', 'payment', 'fee', 'installment', 'emi', 'finance', 'financial']):
+         reason = 'Financial issues: Candidate is flagged for high churn risk due to fee, outstanding payment, or EMI installment concerns mentioned in call log details.'
+         label_key = 'Financial issues'
+    elif any(k in text for k in ['not interested', 'no interest', 'lack of interest', 'lost interest', 'not keen', 'disinterested', 'no longer interested']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
+    elif any(k in text for k in ['joined another', 'joined other', 'admission elsewhere', 'admitted', 'migrated to', 'joined institute', 'joined company', 'enrolled elsewhere']):
+         reason = 'Joined another institution: Candidate explicitly opted for admission or alternative training outcomes at another institution.'
+         label_key = 'Joined another institution'
+    elif any(k in text for k in ['no response', 'no pickup', 'unreachable', 'voicemail', 'did not pick', 'not reachable', 'no answer', 'call dropped', 'busy', 'no contact', 'not responding']):
+         reason = 'Communication gaps: Candidate has a high rate of unreachability, busy signals, or unanswered outbound contact attempts.'
+         label_key = 'Communication gaps'
+    elif any(k in text for k in ['course not suitable', 'course mismatch', 'course not for me', 'content not relevant']):
+         reason = 'Lack of interest: Candidate exhibits disinterest, program mismatch, or lack of direct engagement with onboarding tasks.'
+         label_key = 'Lack of interest'
+    else:
+         reason = 'Other: Candidate exhibits general warning indicators or ambiguous communication feedback requiring dedicated outreach.'
+         label_key = 'Other'
+
+    return reason, heuristic_recommendation(label_key), f'Fallback heuristic ({error_context})'
+
+
+def extract_db_keywords(text, mode='reason'):
+    """
+    Extracts concise tags for database storage.
+    mode='reason' maps to churn causes.
+    mode='action' maps to retention strategies.
+    """
+    if not text: return "General"
+
+    text = str(text).lower()
+
+    # 1. Mapping for Churn Reasons
+    reason_mapping = {
+        'financial': 'Financial Issue',
+        'fee': 'Financial Issue',
+        'emi': 'Financial Issue',
+        'budget': 'Financial Issue',
+        'competitor': 'Competitor Joined',
+        'another': 'Competitor Joined',
+        'interest': 'Lack of Interest',
+        'career': 'Career Shift',
+        'job': 'Career Shift',
+        'unreachable': 'Unreachable',
+        'response': 'Unreachable',
+        'technical': 'Technical Issue'
+    }
+
+    # 2. Mapping for Retention Recommendations
+    action_mapping = {
+        'discount': 'Offer Discount',
+        'emi': 'Payment Plan',
+        'flexible': 'Payment Plan',
+        'demo': 'Technical Demo',
+        'call': 'Schedule Follow-up',
+        'counselor': 'Schedule Follow-up',
+        'email': 'Send Info Email',
+        'incentive': 'Value-Add Offer',
+        'strengths': 'Value-Add Offer'
+    }
+
+    mapping = reason_mapping if mode == 'reason' else action_mapping
+
+    # Check for matches
+    for key, label in mapping.items():
+        if key in text:
+            return label
+
+    # Fallback: Return first 2 words capitalized
+    words = [w for w in text.split() if len(w) > 3]
+    return " ".join(words[:2]).capitalize()
+
+
+def generate_prompt(candidate_data):
+    return f"""
+You are an expert HR Retention Analyst. Analyze this candidate's profile and predict their likelihood of churning (dropping out / requesting a refund).
+
+Candidate Details:
+- Experience: {candidate_data.get('Experience')}
+- Semester: {candidate_data.get('Semester')}
+- Year of Graduation: {candidate_data.get('Year of Graduation')}
+- Education: {candidate_data.get('Course')}
+- Source of Lead: {candidate_data.get('Source of lead')}
+- Batch Assigned: {candidate_data.get('Batch Assigned to')}
+- Track Interested: {candidate_data.get('Track Interested')}
+- Gender: {candidate_data.get('Gender')}
+
+Risk Flags:
+- Has Financial Issues: {'Yes' if candidate_data.get('financial_issue') else 'No'}
+- Not Interested: {'Yes' if candidate_data.get('not_interested') else 'No'}
+- Already Working / Placed: {'Yes' if candidate_data.get('already_working') else 'No'}
+- Decision Pending: {'Yes' if candidate_data.get('decision_pending') else 'No'}
+- Unreachable / Not Connected: {'Yes' if candidate_data.get('unreachable_not_connected') else 'No'}
+- Payment Done: {'Yes' if candidate_data.get('Invoice_binary') else 'No'}
+
+Respond strictly in valid JSON format with exactly the following three keys:
+{{
+  "churn_probability": <A float between 0.0 and 100.0>,
+  "reason": "<A concise 1-2 sentence explanation of why they are at risk or safe>",
+  "retention_strategy": "<A highly actionable 1-2 sentence strategy on how to keep this specific candidate>"
+}}
+"""
+
+
+def parse_json_response(text):
+    text = text.strip()
+    match = re.search(r"```(?:json)?(.*?)```", text, re.DOTALL)
+    if match:
+        text = match.group(1).strip()
+
+    try:
+        data = json.loads(text)
+        return data
+    except Exception as e:
+        return {
+            "churn_probability": 50.0,
+            "reason": f"Failed to parse LLM response. Raw output: {text[:100]}...",
+            "retention_strategy": "Please try again or select a different AI model."
+        }
+
+
+def predict_with_gemini(candidate_data):
+    import google.generativeai as genai
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in .env")
+    genai.configure(api_key=api_key)
+    # Using 1.5-flash as 2.5 might not be available in older library version
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    prompt = generate_prompt(candidate_data)
+    response = model.generate_content(prompt)
+    return parse_json_response(response.text)
+
+
+def predict_with_groq(candidate_data):
+    from groq import Groq
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set in .env")
+    client = Groq(api_key=api_key)
+    prompt = generate_prompt(candidate_data)
+
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.1-8b-instant",
+        response_format={"type": "json_object"}
+    )
+    return json.loads(chat_completion.choices[0].message.content)
+
+
+def predict_with_hf(candidate_data):
+    api_key = os.getenv("HUGGINGFACE_API_KEY")
+    if not api_key:
+        raise ValueError("HUGGINGFACE_API_KEY is not set in .env")
+
+    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    prompt = generate_prompt(candidate_data)
+
+    formatted_prompt = f"<s>[INST] {prompt} [/INST]"
+
+    payload = {
+        "inputs": formatted_prompt,
+        "parameters": {"max_new_tokens": 250, "temperature": 0.1, "return_full_text": False}
+    }
+
+    response = requests.post(API_URL, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise ValueError(f"Hugging Face API Error: {response.text}")
+
+    result_text = response.json()[0]['generated_text'].strip()
+    return parse_json_response(result_text)
+
+
+def get_llm_prediction(model_name, candidate_data):
+    if "Gemini" in model_name:
+        return predict_with_gemini(candidate_data)
+    elif "Groq" in model_name:
+        return predict_with_groq(candidate_data)
+    elif "Hugging Face" in model_name:
+        return predict_with_hf(candidate_data)
+    else:
+        raise ValueError(f"Unknown LLM Model Selected: {model_name}")
+
 
 
 # ─────────────────────────────────────────────
@@ -2212,544 +2230,9 @@ def page_salesperson_stats(candidates_df, supabase):
         else:
             st.info("Risk metrics unavailable or not configured inside predictions.")
 
-# ─────────────────────────────────────────────
-## PAGE 4 — Call log
-# ─────────────────────────────────────────────
-
-def render_agent_workspace_and_logger(supabase, active_owner_uuid):
-    """
-    Renders the custom styled Smart Agent Workspace with KPI matrix summary
-    cards, priority followup task queues, and an integrated interaction logger.
-    """
-    st.markdown("""
-    <div class="page-header">
-        <h1><i class="fa-solid fa-assignment-turned-in"></i> Smart Agent Workspace</h1>
-        <p>Manage prioritized task pipelines, track active customer risk metrics, and log communications.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    current_user_email = st.session_state.get("user_email")
-    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
-    active_owner_uuid = None
-    try:
-        # Fetch users from Supabase Auth admin panel
-        auth_response = supabase_service.auth.admin.list_users()
-
-        # The SDK returns an object where the user list is attached to `.users`
-        # or can be unpacked directly if handled as a raw data wrapper
-        users_list = getattr(auth_response, 'users', auth_response)
-
-        if users_list:
-            # Loop through the user list to find the exact email match
-            for user in users_list:
-                if hasattr(user,
-                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
-                    active_owner_uuid = user.id
-                    break
-
-    except Exception as e:
-        print(f"Error querying Supabase Auth Admin table: {e}")
-
-    # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
-    try:
-        rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": active_owner_uuid}).execute()
-        if rpc_stats.data:
-            s = rpc_stats.data[0]
-
-            # Safely extract with fallbacks to avoid NoneType errors
-            total_leads = s.get("total_candidates") or 0
-            high_risk = s.get("high_risk_count") or 0
-            urgent_reminders = s.get("urgent_followups") or 0
-
-            # FIX: Provide a default fallback string or float before calling float()
-            avg_risk = float(s.get("avg_churn_probability") or 0.0)
-
-            kpi_html = f"""
-            <div style="display:flex; gap:16px; margin-bottom:24px; flex-wrap: wrap;">
-                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
-                    <div style="font-size:32px; font-weight:800; color:#38bdf8;">{total_leads}</div>
-                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Leads Assigned</div>
-                </div>
-                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
-                    <div style="font-size:32px; font-weight:800; color:#ef4444;">{high_risk}</div>
-                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">High Risk Churns</div>
-                </div>
-                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
-                    <div style="font-size:32px; font-weight:800; color:#fbbf24;">{urgent_reminders}</div>
-                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Urgent Actions</div>
-                </div>
-                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
-                    <div style="font-size:32px; font-weight:800; color:#a78bfa;">{avg_risk:.1%}</div>
-                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Avg Risk Baseline</div>
-                </div>
-            </div>
-            """
-            st.markdown(kpi_html, unsafe_allow_html=True)
-    except Exception as e:
-        st.warning(f"KPI compilation error: {e}")
-
-    # ── 2. SMART TASK REMINDERS QUEUE ─────────────────────────────────────
-    st.markdown('<div class="section-header"><h2> Prioritized Action Items (7 Days)</h2></div>',
-                unsafe_allow_html=True)
-    try:
-        reminders = supabase.rpc("get_followup_reminders", {"p_owner_id": active_owner_uuid}).execute()
-        if reminders.data:
-            df_reminders = pd.DataFrame(reminders.data)
-
-            # Formatted column layout summary
-            st.dataframe(
-                df_reminders[[
-                    "next_followup_date", "followup_priority", "candidate_name",
-                    "email", "course", "churn_probability", "interest_level"
-                ]].reset_index(drop=True),
-                use_container_width=True,
-                height=240,
-                column_config={
-                    "next_followup_date": st.column_config.TextColumn("Due Date", width="small"),
-                    "followup_priority": st.column_config.TextColumn("Priority"),
-                    "candidate_name": st.column_config.TextColumn("Student Name"),
-                    "email": st.column_config.TextColumn("Email Address"),
-                    "course": st.column_config.TextColumn("Course"),
-                    "churn_probability": st.column_config.NumberColumn("AI Risk", format="%.1%"),
-                    "interest_level": st.column_config.TextColumn("Interest"),
-                }
-            )
-        else:
-            st.success(" All clear! There are no pending follow-up tasks on your calendar for this week.")
-    except Exception as e:
-        st.info("No active follow-up entries resolved.")
-
-    # ── 3. INTERACTIVE TOUCHPOINT LOGGING FORM ─────────────────────────────
-    st.markdown('<div class="section-header"><h2> Log Live Communication Interaction</h2></div>',
-                unsafe_allow_html=True)
-
-    with st.expander("Open Communication Ingestion Terminal", expanded=True):
-        with st.container():
-            col1, col2 = st.columns(2)
-            with col1:
-                c_email = st.text_input("Candidate Target Email Reference", placeholder="student@example.com")
-                duration_sec = st.number_input("Call Duration Metrics (Seconds)", min_value=0, value=60, step=10)
-                interest = st.selectbox("Inferred Interest Level", ["High", "Medium", "Low"], index=1)
-
-            with col2:
-                direction = st.selectbox("Interaction Direction", ["outbound", "inbound"])
-                remark_cat = st.selectbox("Call Remark",
-                                          ['positive', 'negative', 'neutral', 'follow_up_required', 'resolved', 'callback_requested', 'not_interested', 'pricing_concern', 'time_constraint', 'need_more_info'])
-
-            st.markdown('<div style="margin-top: 15px; margin-bottom: 5px; font-size:14px; font-weight:600; color:#cbd5e1; border-bottom: 1px solid #334155; padding-bottom: 5px;"><i class="fa-solid fa-calendar-check" style="margin-right:8px; color:#38bdf8;"></i> Follow-up Action Plan</div>', unsafe_allow_html=True)
-            f_req = st.toggle("Enable Future Follow-up", value=False)
-            
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                f_date = st.date_input("Followup Date", min_value=datetime.today(), disabled=not f_req)
-            with col_f2:
-                f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1, disabled=not f_req)
-
-            if "current_summary" not in st.session_state:
-                st.session_state["current_summary"] = ""
-            # This will quietly hold onto the Enum string behind the scenes
-            if "hidden_outcome" not in st.session_state:
-                st.session_state["hidden_outcome"] = ""
-            if "previous_text" not in st.session_state:
-                st.session_state["previous_text"] = ""
-
-            # 1. User inputs transcript
-            transcript_text = st.text_area(
-                "Full Audio Call Transcription",
-                placeholder="Paste conversation transcription details here...",
-                height=200
-            )
-
-            # Watch for Paste Event (Auto-generates summary and outcome)
-            if transcript_text.strip() and transcript_text != st.session_state["previous_text"]:
-                if not GROQ_API_KEY:
-                    st.error("Missing GROQ_API_KEY in your local .env configuration.")
-                else:
-                    with st.spinner("Processing Malayalam text..."):
-                        result = live_groq_pipeline(transcript_text, GROQ_API_KEY)
-                        if result:
-                            st.session_state["current_summary"] = result.get("summary", "")
-                            st.session_state["hidden_outcome"] = result.get("call_outcome", "")
-                            st.session_state["previous_text"] = transcript_text
-                            st.rerun()
-
-            # Reset state if text box is cleared
-            if not transcript_text.strip() and st.session_state["current_summary"]:
-                st.session_state["current_summary"] = ""
-                st.session_state["hidden_outcome"] = ""
-                st.session_state["previous_text"] = ""
-                st.rerun()
-
-            # 2. Display Generated Summary (The user can read/edit this if necessary)
-            remarks_text = st.text_area(
-                "Transcription Summary",
-                value=st.session_state["current_summary"],
-                placeholder="Summary will auto-generate here...",
-                height=100
-            )
-
-
-            st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
-            if st.button("Commit Log Ingestion", type="primary", use_container_width=True):
-                if not c_email:
-                    st.error("Please specify a target email identity mapping reference.")
-                else:
-                    f_date_str = f_date.strftime("%Y-%m-%d") if f_req else None
-
-                    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
-                    active_owner_uuid = None
-                    try:
-                        # Fetch users from Supabase Auth admin panel
-                        auth_response = supabase_service.auth.admin.list_users()
-
-                        # The SDK returns an object where the user list is attached to `.users`
-                        # or can be unpacked directly if handled as a raw data wrapper
-                        users_list = getattr(auth_response, 'users', auth_response)
-
-                        if users_list:
-                            # Loop through the user list to find the exact email match
-                            for user in users_list:
-                                if hasattr(user,
-                                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
-                                    active_owner_uuid = user.id
-                                    break
-
-                    except Exception as e:
-                        print(f"Error querying Supabase Auth Admin table: {e}")
-
-                    # ── STAGE 2: FETCH THE LEGACY LABEL FROM SALESPERSON MAPPING ─────
-                    legacy_agent_label = "Unknown Agent"
-                    try:
-                        agent_query = supabase.table("salesperson_mappings") \
-                            .select("legacy_label") \
-                            .eq("salesperson_email", current_user_email.strip()) \
-                            .limit(1).execute()
-
-                        if agent_query.data and agent_query.data[0].get("legacy_label"):
-                            legacy_agent_label = agent_query.data[0]["legacy_label"]
-                    except Exception as e:
-                        print(f"Error looking up legacy mapping table: {e}")
-
-                    # ── STAGE 3: VALIDATION AND EXECUTION ────────────────────────────
-                    if not active_owner_uuid:
-                        st.error(
-                            f" Ingestion Blocked: Found your session email ('{current_user_email}'), but it does not map to any registered account in Supabase Auth.")
-                    else:
-                        # Execute log insertion using the freshly resolved UUID
-                        success, message = log_crm_call_interaction(
-                            email=c_email.strip(),
-                            duration_sec=int(duration_sec),
-                            agent_name=legacy_agent_label,
-                            owner_id=active_owner_uuid,  # <-- Pass the real Auth UUID here!
-                            direction=direction,
-                            outcomes_list=[st.session_state["hidden_outcome"]],
-                            remark_cat=remark_cat,
-                            summary_text=remarks_text[:200] if remarks_text else "No summary provided.",
-                            interest=interest,
-                            followup_req=f_req,
-                            next_followup_str=f_date_str,
-                            priority=f_pri
-                        )
-
-                        if success:
-                            st.success("Interaction touchpoint committed directly to transactional registries.")
-                            st.rerun()
-                        else:
-                            st.error(f"Transaction Aborted: {message}")
 
 # ─────────────────────────────────────────────
-# Page 5: Add candidate
-# ─────────────────────────────────────────────
-def render_candidate_entry_form(df, notes):
-    # ── Identical Page Header Layout ─────────────────────────────
-    st.markdown("""
-    <div class="page-header">
-        <h1><i class="fa-solid fa-user-plus"></i> Add New Candidate</h1>
-        <p>Manually create and synchronize a fresh candidate profile into the CRM database.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Pure dynamic extractor: No hardcoded fallbacks allowed
-    def get_exact_dataset_options(col_name):
-        if col_name in df.columns:
-            unique_vals = df[col_name].dropna().unique()
-            cleaned = sorted([str(x).strip() for x in unique_vals if str(x).strip() != ''])
-            if cleaned:
-                return cleaned
-        return [""]
-
-    # Extract available options
-    course_opts = get_exact_dataset_options('Course')
-    edu_opts = get_exact_dataset_options('Education')
-    yog_opts = get_exact_dataset_options('Year of Graduation')
-    sem_opts = get_exact_dataset_options('Semester')
-    stream_opts = get_exact_dataset_options('Stream')
-    track_opts = get_exact_dataset_options('Track Interested')
-    mode_opts = get_exact_dataset_options('Mode of Program Joined')
-    loc_opts = get_exact_dataset_options('Program Location')
-    ind_opts = get_exact_dataset_options('Induction session')
-    city_opts = get_exact_dataset_options('City')
-    state_opts = get_exact_dataset_options('Mailing State')
-    country_opts = get_exact_dataset_options('Mailing Country')
-    pay_mode_opts = get_exact_dataset_options('Payment_mode')
-    source_opts = get_exact_dataset_options('Source of lead')
-
-    # Wizard State Initialization
-    if "candidate_step" not in st.session_state:
-        st.session_state.candidate_step = 1
-    if "candidate_form_data" not in st.session_state:
-        st.session_state.candidate_form_data = {}
-
-    def get_index(options_list, val):
-        return options_list.index(val) if val in options_list else 0
-
-    st.markdown(f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.candidate_step} of 2</div>', unsafe_allow_html=True)
-    st.progress(st.session_state.candidate_step / 2.0)
-
-    if st.session_state.candidate_step == 1:
-        st.markdown('<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-user" style="color:#6366f1; margin-right:8px;"></i> Step 1: Personal & Academic Profile</h2></div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-id-card" style="margin-right:8px;"></i> Personal Identity</div>', unsafe_allow_html=True)
-        col_ident1, col_ident2 = st.columns(2)
-        with col_ident1:
-            candidate_name = st.text_input("Name *", value=st.session_state.candidate_form_data.get('candidate_name', ""), placeholder="John Doe")
-            email = st.text_input("Email *", value=st.session_state.candidate_form_data.get('email', ""), placeholder="john@example.com")
-            contact_phone = st.text_input("Phone *", value=st.session_state.candidate_form_data.get('contact_phone', ""), placeholder="XXXXX XXXXX")
-        with col_ident2:
-            contact_id = st.text_input("Contact ID *", value=st.session_state.candidate_form_data.get('contact_id', ""), placeholder="zcrm_XXXX")
-            gender_opts = ['Male', 'Female']
-            gender = st.selectbox("Gender *", gender_opts, index=get_index(gender_opts, st.session_state.candidate_form_data.get('gender')))
-            experience_years = st.number_input("Work Experience (Years) *", min_value=0.0, max_value=50.0, value=st.session_state.candidate_form_data.get('experience_years', 0.0), step=0.5, format="%.1f")
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Enrollment & Academic Details</div>', unsafe_allow_html=True)
-        col_edu1, col_edu2 = st.columns(2)
-        with col_edu1:
-            course = st.selectbox("Course Domain Selection *", course_opts, index=get_index(course_opts, st.session_state.candidate_form_data.get('course')), key="inp_course_live")
-            education = st.selectbox("Education Background *", edu_opts, index=get_index(edu_opts, st.session_state.candidate_form_data.get('education')))
-        with col_edu2:
-            year_of_graduation = st.selectbox("Year of Graduation *", yog_opts, index=get_index(yog_opts, st.session_state.candidate_form_data.get('year_of_graduation')))
-            semester = st.selectbox("Current Semester *", sem_opts, index=get_index(sem_opts, st.session_state.candidate_form_data.get('semester')))
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Evaluation Notes</div>', unsafe_allow_html=True)
-        background_override = st.text_area("Feedback / Background Override Notes *", value=st.session_state.candidate_form_data.get('background_override', ""), placeholder="Add unique profile feedback notes for categorization...")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        default_total_fee = 0.0
-        if 'Course' in df.columns and 'Total_Amount' in df.columns:
-            matched_amounts = df[df['Course'] == course]['Total_Amount'].dropna()
-            if not matched_amounts.empty:
-                try:
-                    default_total_fee = float(matched_amounts.mode().iloc[0])
-                except Exception:
-                    default_total_fee = float(matched_amounts.mean())
-
-        c1, c2 = st.columns([4, 1])
-        with c2:
-            if st.button("Next", type="primary", icon=":material/arrow_forward:", use_container_width=True):
-                # Simple validation of Step 1 fields
-                if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not background_override.strip():
-                    st.error("Submission Denied: All text fields must be fully populated.")
-                else:
-                    st.session_state.candidate_form_data.update({
-                        'candidate_name': candidate_name,
-                        'contact_id': contact_id,
-                        'email': email,
-                        'gender': gender,
-                        'contact_phone': contact_phone,
-                        'experience_years': experience_years,
-                        'course': course,
-                        'default_total_fee': default_total_fee,
-                        'education': education,
-                        'year_of_graduation': year_of_graduation,
-                        'semester': semester,
-                        'background_override': background_override
-                    })
-                    st.session_state.candidate_step = 2
-                    st.rerun()
-
-    elif st.session_state.candidate_step == 2:
-        st.markdown('<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Step 2: Enrollment & Billing Details</h2></div>', unsafe_allow_html=True)
-
-        course = st.session_state.candidate_form_data.get('course', course_opts[0])
-        default_total_fee = st.session_state.candidate_form_data.get('default_total_fee', 0.0)
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Track Configuration</div>', unsafe_allow_html=True)
-        st.info(f"Selected Course: **{course}**")
-        col_course1, col_course2 = st.columns(2)
-        with col_course1:
-            stream = st.selectbox("Interested Stream *", stream_opts, index=get_index(stream_opts, st.session_state.candidate_form_data.get('stream')))
-            track_interested = st.selectbox("Track Customization *", track_opts, index=get_index(track_opts, st.session_state.candidate_form_data.get('track_interested')))
-        with col_course2:
-            program_mode = st.selectbox("Mode of Program Joined *", mode_opts, index=get_index(mode_opts, st.session_state.candidate_form_data.get('program_mode')))
-            program_location = st.selectbox("Program Location *", loc_opts, index=get_index(loc_opts, st.session_state.candidate_form_data.get('program_location')))
-            
-        col_batch1, col_batch2 = st.columns(2)
-        with col_batch1:
-            batch_assigned = st.text_input("Batch Assigned *", value=st.session_state.candidate_form_data.get('batch_assigned', ""), placeholder="Aug 2026")
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Regional Details</div>', unsafe_allow_html=True)
-        col_reg1, col_reg2, col_reg3 = st.columns(3)
-        with col_reg1:
-            city = st.selectbox("City *", city_opts, index=get_index(city_opts, st.session_state.candidate_form_data.get('city')))
-        with col_reg2:
-            mailing_state = st.selectbox("State *", state_opts, index=get_index(state_opts, st.session_state.candidate_form_data.get('mailing_state')))
-        with col_reg3:
-            mailing_country = st.selectbox("Country *", country_opts, index=get_index(country_opts, st.session_state.candidate_form_data.get('mailing_country')))
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Billing & Finance Details</div>', unsafe_allow_html=True)
-        col_fin1, col_fin2 = st.columns(2)
-        with col_fin1:
-            payment_date = st.date_input("Payment Date", value=st.session_state.candidate_form_data.get('payment_date'), key="inp_pay_date")
-            pay_mode_opts = get_exact_dataset_options('Payment_mode')
-            payment_mode = st.selectbox("Payment Mode", pay_mode_opts, index=get_index(pay_mode_opts, st.session_state.candidate_form_data.get('payment_mode')))
-            invoice_status = st.selectbox("Invoice Generated?", ["No", "Yes"], index=["No", "Yes"].index(st.session_state.candidate_form_data.get('invoice_status', 'No')) if st.session_state.candidate_form_data.get('invoice_status') in ["No", "Yes"] else 0)
-        with col_fin2:
-            paid_amount = st.number_input("Paid Amount", min_value=0.0, value=st.session_state.candidate_form_data.get('paid_amount', 0.0), step=100.0, format="%.2f")
-            total_amount = st.number_input("Total Amount", min_value=0.0, value=st.session_state.candidate_form_data.get('total_amount', default_total_fee), step=100.0, format="%.2f")
-
-        st.markdown('<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Lead Details</div>', unsafe_allow_html=True)
-        col_onb1, col_onb2, col_onb3 = st.columns(3)
-        with col_onb1:
-            source_of_lead = st.selectbox("Source of Lead", source_opts, index=get_index(source_opts, st.session_state.candidate_form_data.get('source_of_lead')))
-        with col_onb2:
-            feedback_opts = ["Positive", "Negative", "Neutral"]
-            feedback_status = st.selectbox("Candidate Intake Feedback *", feedback_opts, index=get_index(feedback_opts, st.session_state.candidate_form_data.get('feedback_status')))
-        with col_onb3:
-            induction_session = st.selectbox("Induction Session *", ind_opts, index=get_index(ind_opts, st.session_state.candidate_form_data.get('induction_session')))
-
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        col_chk1, col_chk2 = st.columns(2)
-        with col_chk1:
-            test_cleared = st.checkbox("Passed Required Test Engine", value=st.session_state.candidate_form_data.get('test_cleared', False))
-        with col_chk2:
-            followup_sent = st.checkbox("Sent Initial Followup Email", value=st.session_state.candidate_form_data.get('followup_sent', False))
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1,3,1])
-        with c1:
-            if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
-                # Save current Step 2 fields to session state
-                st.session_state.candidate_form_data.update({
-                    'course': course,
-                    'stream': stream,
-                    'track_interested': track_interested,
-                    'program_mode': program_mode,
-                    'program_location': program_location,
-                    'batch_assigned': batch_assigned,
-                    'city': city,
-                    'mailing_state': mailing_state,
-                    'mailing_country': mailing_country,
-                    'payment_date': payment_date,
-                    'payment_mode': payment_mode,
-                    'paid_amount': paid_amount,
-                    'total_amount': total_amount,
-                    'source_of_lead': source_of_lead,
-                    'feedback_status': feedback_status,
-                    'induction_session': induction_session,
-                    'invoice_status': invoice_status,
-                    'test_cleared': test_cleared,
-                    'followup_sent': followup_sent
-                })
-                st.session_state.candidate_step = 1
-                st.rerun()
-        with c3:
-            submit_btn = st.button("Create Profile", type="primary", icon=":material/check:", use_container_width=True)
-
-        if submit_btn:
-            # Stage all data
-            fd = st.session_state.candidate_form_data
-            candidate_name = fd.get('candidate_name', '')
-            contact_id = fd.get('contact_id', '')
-            email = fd.get('email', '')
-            contact_phone = fd.get('contact_phone', '')
-            gender = fd.get('gender', '')
-            experience_years = fd.get('experience_years', 0.0)
-            education = fd.get('education', '')
-            year_of_graduation = fd.get('year_of_graduation', '')
-            semester = fd.get('semester', '')
-            background_override = fd.get('background_override', '')
-
-            # Simple validation of all fields
-            if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not batch_assigned.strip() or not background_override.strip():
-                st.error("Submission Denied: All required fields must be fully valid and populated.")
-                return
-
-                # ── 1. Cleanly Normalize the Streamlit Email ──
-            logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
-
-                # ── 2. Structural Verification Lookup (Python-Driven) ──
-            resolved_owner = None
-
-            try:
-                mapping_res = supabase.table("salesperson_mappings").select(
-                        "salesperson_email, legacy_label").execute()
-
-                if mapping_res.data:
-                    for row in mapping_res.data:
-                        db_email = str(row.get("salesperson_email", "")).strip().lower()
-                        if db_email == logged_in_email:
-                            resolved_owner = row.get("legacy_label")
-                            break
-
-                if not resolved_owner:
-                    st.error(
-                            f" Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
-                    return
-                else:
-                    st.toast(f" Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
-
-            except Exception as lookup_err:
-                st.error(f"Mapping Database Communication Interruption: {lookup_err}")
-                return
-
-            formatted_payment_date = str(payment_date) if payment_date is not None else None
-
-            candidate_payload = {
-                "candidate_name": candidate_name.strip(),
-                "contact_id": contact_id.strip(),
-                "email": email.strip().lower(),
-                "contact_phone": contact_phone.strip(),
-                "gender": gender,
-                "education": education,
-                "Year of Graduation": year_of_graduation,
-                "Semester": semester,
-                "city": city,
-                "mailing_state": mailing_state,
-                "mailing_country": mailing_country,
-                "course": course,
-                "stream": stream,
-                "track_interested": track_interested,
-                "batch_assigned": batch_assigned.strip(),
-                "program_mode": program_mode,
-                "program_location": program_location,
-                "induction_session": induction_session,
-                "background_override": background_override.strip(),
-                "csv_contact_owner": resolved_owner,
-                "Payment_Date": formatted_payment_date,
-                "Payment_mode": payment_mode if payment_mode != "" else None,
-                "Paid_amount": float(paid_amount),
-                "Total_Amount": float(total_amount),
-                "Source of Lead": source_of_lead if source_of_lead != "" else None,
-                "Feedback": feedback_status,
-                "Invoice": invoice_status,
-                "Experience": str(experience_years),
-                "Test": test_cleared,
-                "Followup Email": followup_sent
-            }
-
-            try:
-                with st.spinner("Synchronizing record with Supabase CRM Database..."):
-                    supabase.table("candidates").insert(candidate_payload).execute()
-                    st.success(f"Profile for **{candidate_name}** has been successfully generated and linked to {resolved_owner}.")
-                    # Clear session state data on success
-                    st.session_state.candidate_form_data = {}
-                    st.session_state.candidate_step = 1
-            except Exception as e:
-                st.error(f"Ingestion Interruption: {e}")
-
-# ─────────────────────────────────────────────
-# PAGE 6 — CRM NOTES ANALYSIS
+# PAGE 4 — CRM NOTES ANALYSIS
 # ─────────────────────────────────────────────
 def page_notes_analysis(df, notes):
     st.markdown("""
@@ -2846,7 +2329,7 @@ def page_notes_analysis(df, notes):
             st.warning("Could not parse 'Created Time' for timeline.")
 
 # ─────────────────────────────────────────────
-# PAGE 7 — PAYMENT ANALYSIS
+# PAGE 5 — PAYMENT ANALYSIS
 # ─────────────────────────────────────────────
 def page_payment_analysis(df):
     st.markdown("""
@@ -3022,7 +2505,7 @@ def page_payment_analysis(df):
     st.plotly_chart(fig3, use_container_width=True, on_select="rerun", key="payment_chart_churn")
 
 # ─────────────────────────────────────────────
-# PAGE 8 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
+# PAGE 6 — LIVE PREDICTOR WITH SUPABASE TELEMETRY
 # ─────────────────────────────────────────────
 def page_live_predictor(df, model_data, supabase):
     st.markdown("""
@@ -3450,6 +2933,16 @@ def page_live_predictor(df, model_data, supabase):
                     llm_retention = "Initiate standardized recovery sequences based on risk vectors."
                     model_display = model_data.get('model_display_name', selected_model_name)
 
+                suggested_reason, ai_recommendation, extraction_method = extract_reason_and_recommendation(
+                    model_df_input,
+                    call_remarks,
+                    feedback,
+                    call_transcript,
+                    preferred_ai=preferred_ai
+                )
+                final_reason_text = extract_db_keywords(suggested_reason, mode='reason')
+                final_recommendation_text = extract_db_keywords(ai_recommendation, mode='action')
+
                 # --- SUPABASE DATA WRITER ---
                 user_ip = st.context.ip_address if st.context.ip_address else "127.0.0.1"
 
@@ -3492,7 +2985,8 @@ def page_live_predictor(df, model_data, supabase):
                     "predicted_by": st.session_state.get("user_email", "dashboard_agent"),
                     "risk_level": "high" if prob > 0.65 else ("medium" if prob > 0.35 else "low"),
                     "client_ip": user_ip, "previous_prediction_id": prev_pred_id, "session_id": current_session_id,
-                    "confidence_score": round(abs(prob - 0.5) * 2, 4), "model_version": "v1.0.0-prod"
+                    "confidence_score": round(abs(prob - 0.5) * 2, 4), "model_version": "v1.0.0-prod",
+                    "top_churn_reasons":final_reason_text, "retention_recommendations":final_recommendation_text
                 }
 
                 if supabase is not None:
@@ -3547,13 +3041,7 @@ def page_live_predictor(df, model_data, supabase):
                     ret_prate = float(db_metrics.get('paid_rate') or derived_paid_rate) * 100
 
                     action_req = '<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24"></i> <b style="color:#fbbf24;">Action Required:</b> Immediate intervention.' if pred == 1 else '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> <b style="color:#34d399;">On Track:</b> Monitor.'
-                    suggested_reason, ai_recommendation, extraction_method = extract_reason_and_recommendation(
-                        model_df_input,
-                        call_remarks,
-                        feedback,
-                        call_transcript,
-                        preferred_ai=preferred_ai
-                    )
+
 
                     def format_ai_output(obj):
                         if isinstance(obj, str):
@@ -3600,6 +3088,620 @@ def page_live_predictor(df, model_data, supabase):
                     st.toast("Telemetry matrix updates synced to Supabase.", icon=":material/database:")
             except Exception as e:
                 st.error(f"Prediction Pipeline Faulted: {e}")
+
+
+# ─────────────────────────────────────────────
+# Page 7: Add candidate
+# ─────────────────────────────────────────────
+def render_candidate_entry_form(df, notes):
+
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-user-plus"></i> Add New Candidate</h1>
+        <p>Manually create and synchronize a fresh candidate profile into the CRM database.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Pure dynamic extractor: No hardcoded fallbacks allowed
+    def get_exact_dataset_options(col_name):
+        if col_name in df.columns:
+            unique_vals = df[col_name].dropna().unique()
+            cleaned = sorted([str(x).strip() for x in unique_vals if str(x).strip() != ''])
+            if cleaned:
+                return cleaned
+        return [""]
+
+    # Extract available options
+    course_opts = get_exact_dataset_options('Course')
+    edu_opts = get_exact_dataset_options('Education')
+    yog_opts = get_exact_dataset_options('Year of Graduation')
+    sem_opts = get_exact_dataset_options('Semester')
+    stream_opts = get_exact_dataset_options('Stream')
+    track_opts = get_exact_dataset_options('Track Interested')
+    mode_opts = get_exact_dataset_options('Mode of Program Joined')
+    loc_opts = get_exact_dataset_options('Program Location')
+    ind_opts = get_exact_dataset_options('Induction session')
+    city_opts = get_exact_dataset_options('City')
+    state_opts = get_exact_dataset_options('Mailing State')
+    country_opts = get_exact_dataset_options('Mailing Country')
+    pay_mode_opts = get_exact_dataset_options('Payment_mode')
+    source_opts = get_exact_dataset_options('Source of lead')
+
+    # Wizard State Initialization
+    if "candidate_step" not in st.session_state:
+        st.session_state.candidate_step = 1
+    if "candidate_form_data" not in st.session_state:
+        st.session_state.candidate_form_data = {}
+
+    def get_index(options_list, val):
+        return options_list.index(val) if val in options_list else 0
+
+    st.markdown(
+        f'<div style="text-align: right; color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Step {st.session_state.candidate_step} of 2</div>',
+        unsafe_allow_html=True)
+    st.progress(st.session_state.candidate_step / 2.0)
+
+    if st.session_state.candidate_step == 1:
+        st.markdown(
+            '<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-user" style="color:#6366f1; margin-right:8px;"></i> Step 1: Personal & Academic Profile</h2></div>',
+            unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-id-card" style="margin-right:8px;"></i> Personal Identity</div>',
+            unsafe_allow_html=True)
+        col_ident1, col_ident2 = st.columns(2)
+        with col_ident1:
+            candidate_name = st.text_input("Name *",
+                                           value=st.session_state.candidate_form_data.get('candidate_name', ""),
+                                           placeholder="John Doe")
+            email = st.text_input("Email *", value=st.session_state.candidate_form_data.get('email', ""),
+                                  placeholder="john@example.com")
+            contact_phone = st.text_input("Phone *",
+                                          value=st.session_state.candidate_form_data.get('contact_phone', ""),
+                                          placeholder="XXXXX XXXXX")
+        with col_ident2:
+            contact_id = st.text_input("Contact ID *", value=st.session_state.candidate_form_data.get('contact_id', ""),
+                                       placeholder="zcrm_XXXX")
+            gender_opts = ['Male', 'Female']
+            gender = st.selectbox("Gender *", gender_opts,
+                                  index=get_index(gender_opts, st.session_state.candidate_form_data.get('gender')))
+            experience_years = st.number_input("Work Experience (Years) *", min_value=0.0, max_value=50.0,
+                                               value=st.session_state.candidate_form_data.get('experience_years', 0.0),
+                                               step=0.5, format="%.1f")
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Enrollment & Academic Details</div>',
+            unsafe_allow_html=True)
+        col_edu1, col_edu2 = st.columns(2)
+        with col_edu1:
+            course = st.selectbox("Course Domain Selection *", course_opts,
+                                  index=get_index(course_opts, st.session_state.candidate_form_data.get('course')),
+                                  key="inp_course_live")
+            education = st.selectbox("Education Background *", edu_opts,
+                                     index=get_index(edu_opts, st.session_state.candidate_form_data.get('education')))
+        with col_edu2:
+            year_of_graduation = st.selectbox("Year of Graduation *", yog_opts, index=get_index(yog_opts,
+                                                                                                st.session_state.candidate_form_data.get(
+                                                                                                    'year_of_graduation')))
+            semester = st.selectbox("Current Semester *", sem_opts,
+                                    index=get_index(sem_opts, st.session_state.candidate_form_data.get('semester')))
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Evaluation Notes</div>',
+            unsafe_allow_html=True)
+        background_override = st.text_area("Feedback / Background Override Notes *",
+                                           value=st.session_state.candidate_form_data.get('background_override', ""),
+                                           placeholder="Add unique profile feedback notes for categorization...")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        default_total_fee = 0.0
+        if 'Course' in df.columns and 'Total_Amount' in df.columns:
+            matched_amounts = df[df['Course'] == course]['Total_Amount'].dropna()
+            if not matched_amounts.empty:
+                try:
+                    default_total_fee = float(matched_amounts.mode().iloc[0])
+                except Exception:
+                    default_total_fee = float(matched_amounts.mean())
+
+        c1, c2 = st.columns([4, 1])
+        with c2:
+            if st.button("Next", type="primary", icon=":material/arrow_forward:", use_container_width=True):
+                # Simple validation of Step 1 fields
+                if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not background_override.strip():
+                    st.error("Submission Denied: All text fields must be fully populated.")
+                else:
+                    st.session_state.candidate_form_data.update({
+                        'candidate_name': candidate_name,
+                        'contact_id': contact_id,
+                        'email': email,
+                        'gender': gender,
+                        'contact_phone': contact_phone,
+                        'experience_years': experience_years,
+                        'course': course,
+                        'default_total_fee': default_total_fee,
+                        'education': education,
+                        'year_of_graduation': year_of_graduation,
+                        'semester': semester,
+                        'background_override': background_override
+                    })
+                    st.session_state.candidate_step = 2
+                    st.rerun()
+
+    elif st.session_state.candidate_step == 2:
+        st.markdown(
+            '<div class="section-header" style="margin-top:10px;"><h2><i class="fa-solid fa-graduation-cap" style="color:#34d399; margin-right:8px;"></i> Step 2: Enrollment & Billing Details</h2></div>',
+            unsafe_allow_html=True)
+
+        course = st.session_state.candidate_form_data.get('course', course_opts[0])
+        default_total_fee = st.session_state.candidate_form_data.get('default_total_fee', 0.0)
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-graduation-cap" style="margin-right:8px;"></i> Course & Track Configuration</div>',
+            unsafe_allow_html=True)
+        st.info(f"Selected Course: **{course}**")
+        col_course1, col_course2 = st.columns(2)
+        with col_course1:
+            stream = st.selectbox("Interested Stream *", stream_opts,
+                                  index=get_index(stream_opts, st.session_state.candidate_form_data.get('stream')))
+            track_interested = st.selectbox("Track Customization *", track_opts, index=get_index(track_opts,
+                                                                                                 st.session_state.candidate_form_data.get(
+                                                                                                     'track_interested')))
+        with col_course2:
+            program_mode = st.selectbox("Mode of Program Joined *", mode_opts, index=get_index(mode_opts,
+                                                                                               st.session_state.candidate_form_data.get(
+                                                                                                   'program_mode')))
+            program_location = st.selectbox("Program Location *", loc_opts, index=get_index(loc_opts,
+                                                                                            st.session_state.candidate_form_data.get(
+                                                                                                'program_location')))
+
+        col_batch1, col_batch2 = st.columns(2)
+        with col_batch1:
+            batch_assigned = st.text_input("Batch Assigned *",
+                                           value=st.session_state.candidate_form_data.get('batch_assigned', ""),
+                                           placeholder="Aug 2026")
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-location-dot" style="margin-right:8px;"></i> Regional Details</div>',
+            unsafe_allow_html=True)
+        col_reg1, col_reg2, col_reg3 = st.columns(3)
+        with col_reg1:
+            city = st.selectbox("City *", city_opts,
+                                index=get_index(city_opts, st.session_state.candidate_form_data.get('city')))
+        with col_reg2:
+            mailing_state = st.selectbox("State *", state_opts, index=get_index(state_opts,
+                                                                                st.session_state.candidate_form_data.get(
+                                                                                    'mailing_state')))
+        with col_reg3:
+            mailing_country = st.selectbox("Country *", country_opts, index=get_index(country_opts,
+                                                                                      st.session_state.candidate_form_data.get(
+                                                                                          'mailing_country')))
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-wallet" style="margin-right:8px;"></i> Billing & Finance Details</div>',
+            unsafe_allow_html=True)
+        col_fin1, col_fin2 = st.columns(2)
+        with col_fin1:
+            payment_date = st.date_input("Payment Date", value=st.session_state.candidate_form_data.get('payment_date'),
+                                         key="inp_pay_date")
+            pay_mode_opts = get_exact_dataset_options('Payment_mode')
+            payment_mode = st.selectbox("Payment Mode", pay_mode_opts, index=get_index(pay_mode_opts,
+                                                                                       st.session_state.candidate_form_data.get(
+                                                                                           'payment_mode')))
+            invoice_status = st.selectbox("Invoice Generated?", ["No", "Yes"], index=["No", "Yes"].index(
+                st.session_state.candidate_form_data.get('invoice_status',
+                                                         'No')) if st.session_state.candidate_form_data.get(
+                'invoice_status') in ["No", "Yes"] else 0)
+        with col_fin2:
+            paid_amount = st.number_input("Paid Amount", min_value=0.0,
+                                          value=st.session_state.candidate_form_data.get('paid_amount', 0.0),
+                                          step=100.0, format="%.2f")
+            total_amount = st.number_input("Total Amount", min_value=0.0,
+                                           value=st.session_state.candidate_form_data.get('total_amount',
+                                                                                          default_total_fee),
+                                           step=100.0, format="%.2f")
+
+        st.markdown(
+            '<div style="font-size:15px; font-weight:700; color:#38bdf8; margin: 25px 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-bullseye" style="margin-right:8px;"></i> Onboarding & Lead Details</div>',
+            unsafe_allow_html=True)
+        col_onb1, col_onb2, col_onb3 = st.columns(3)
+        with col_onb1:
+            source_of_lead = st.selectbox("Source of Lead", source_opts, index=get_index(source_opts,
+                                                                                         st.session_state.candidate_form_data.get(
+                                                                                             'source_of_lead')))
+        with col_onb2:
+            feedback_opts = ["Positive", "Negative", "Neutral"]
+            feedback_status = st.selectbox("Candidate Intake Feedback *", feedback_opts, index=get_index(feedback_opts,
+                                                                                                         st.session_state.candidate_form_data.get(
+                                                                                                             'feedback_status')))
+        with col_onb3:
+            induction_session = st.selectbox("Induction Session *", ind_opts, index=get_index(ind_opts,
+                                                                                              st.session_state.candidate_form_data.get(
+                                                                                                  'induction_session')))
+
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        col_chk1, col_chk2 = st.columns(2)
+        with col_chk1:
+            test_cleared = st.checkbox("Passed Required Test Engine",
+                                       value=st.session_state.candidate_form_data.get('test_cleared', False))
+        with col_chk2:
+            followup_sent = st.checkbox("Sent Initial Followup Email",
+                                        value=st.session_state.candidate_form_data.get('followup_sent', False))
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1, 3, 1])
+        with c1:
+            if st.button("Back", icon=":material/arrow_back:", use_container_width=True):
+                # Save current Step 2 fields to session state
+                st.session_state.candidate_form_data.update({
+                    'course': course,
+                    'stream': stream,
+                    'track_interested': track_interested,
+                    'program_mode': program_mode,
+                    'program_location': program_location,
+                    'batch_assigned': batch_assigned,
+                    'city': city,
+                    'mailing_state': mailing_state,
+                    'mailing_country': mailing_country,
+                    'payment_date': payment_date,
+                    'payment_mode': payment_mode,
+                    'paid_amount': paid_amount,
+                    'total_amount': total_amount,
+                    'source_of_lead': source_of_lead,
+                    'feedback_status': feedback_status,
+                    'induction_session': induction_session,
+                    'invoice_status': invoice_status,
+                    'test_cleared': test_cleared,
+                    'followup_sent': followup_sent
+                })
+                st.session_state.candidate_step = 1
+                st.rerun()
+        with c3:
+            submit_btn = st.button("Create Profile", type="primary", icon=":material/check:", use_container_width=True)
+
+        if submit_btn:
+            # Stage all data
+            fd = st.session_state.candidate_form_data
+            candidate_name = fd.get('candidate_name', '')
+            contact_id = fd.get('contact_id', '')
+            email = fd.get('email', '')
+            contact_phone = fd.get('contact_phone', '')
+            gender = fd.get('gender', '')
+            experience_years = fd.get('experience_years', 0.0)
+            education = fd.get('education', '')
+            year_of_graduation = fd.get('year_of_graduation', '')
+            semester = fd.get('semester', '')
+            background_override = fd.get('background_override', '')
+
+            # Simple validation of all fields
+            if not candidate_name.strip() or not contact_id.strip() or not email.strip() or not contact_phone.strip() or not batch_assigned.strip() or not background_override.strip():
+                st.error("Submission Denied: All required fields must be fully valid and populated.")
+                return
+
+                # ── 1. Cleanly Normalize the Streamlit Email ──
+            logged_in_email = str(st.session_state.get('user_email', '')).strip().lower()
+
+            # ── 2. Structural Verification Lookup (Python-Driven) ──
+            resolved_owner = None
+
+            try:
+                mapping_res = supabase.table("salesperson_mappings").select(
+                    "salesperson_email, legacy_label").execute()
+
+                if mapping_res.data:
+                    for row in mapping_res.data:
+                        db_email = str(row.get("salesperson_email", "")).strip().lower()
+                        if db_email == logged_in_email:
+                            resolved_owner = row.get("legacy_label")
+                            break
+
+                if not resolved_owner:
+                    st.error(
+                        f" Critical Match Error: '{logged_in_email}' was not found in the salesperson mapping records.")
+                    return
+                else:
+                    st.toast(f" Live Database Match Found: {resolved_owner}", icon=":material/thumb_up:")
+
+            except Exception as lookup_err:
+                st.error(f"Mapping Database Communication Interruption: {lookup_err}")
+                return
+
+            formatted_payment_date = str(payment_date) if payment_date is not None else None
+
+            candidate_payload = {
+                "candidate_name": candidate_name.strip(),
+                "contact_id": contact_id.strip(),
+                "email": email.strip().lower(),
+                "contact_phone": contact_phone.strip(),
+                "gender": gender,
+                "education": education,
+                "Year of Graduation": year_of_graduation,
+                "Semester": semester,
+                "city": city,
+                "mailing_state": mailing_state,
+                "mailing_country": mailing_country,
+                "course": course,
+                "stream": stream,
+                "track_interested": track_interested,
+                "batch_assigned": batch_assigned.strip(),
+                "program_mode": program_mode,
+                "program_location": program_location,
+                "induction_session": induction_session,
+                "background_override": background_override.strip(),
+                "csv_contact_owner": resolved_owner,
+                "Payment_Date": formatted_payment_date,
+                "Payment_mode": payment_mode if payment_mode != "" else None,
+                "Paid_amount": float(paid_amount),
+                "Total_Amount": float(total_amount),
+                "Source of Lead": source_of_lead if source_of_lead != "" else None,
+                "Feedback": feedback_status,
+                "Invoice": invoice_status,
+                "Experience": str(experience_years),
+                "Test": test_cleared,
+                "Followup Email": followup_sent
+            }
+
+            try:
+                with st.spinner("Synchronizing record with Supabase CRM Database..."):
+                    supabase.table("candidates").insert(candidate_payload).execute()
+                    st.success(
+                        f"Profile for **{candidate_name}** has been successfully generated and linked to {resolved_owner}.")
+                    # Clear session state data on success
+                    st.session_state.candidate_form_data = {}
+                    st.session_state.candidate_step = 1
+            except Exception as e:
+                st.error(f"Ingestion Interruption: {e}")
+
+
+# ─────────────────────────────────────────────
+## PAGE 8 — Executive workspace
+# ─────────────────────────────────────────────
+
+def render_agent_workspace_and_logger(supabase, active_owner_uuid):
+    """
+    Renders the custom styled Smart Agent Workspace with KPI matrix summary
+    cards, priority followup task queues, and an integrated interaction logger.
+    """
+    st.markdown("""
+    <div class="page-header">
+        <h1><i class="fa-solid fa-assignment-turned-in"></i> Smart Agent Workspace</h1>
+        <p>Manage prioritized task pipelines, track active customer risk metrics, and log communications.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    current_user_email = st.session_state.get("user_email")
+    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
+    active_owner_uuid = None
+    try:
+        # Fetch users from Supabase Auth admin panel
+        auth_response = supabase_service.auth.admin.list_users()
+
+        # The SDK returns an object where the user list is attached to `.users`
+        # or can be unpacked directly if handled as a raw data wrapper
+        users_list = getattr(auth_response, 'users', auth_response)
+
+        if users_list:
+            # Loop through the user list to find the exact email match
+            for user in users_list:
+                if hasattr(user,
+                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
+                    active_owner_uuid = user.id
+                    break
+
+    except Exception as e:
+        print(f"Error querying Supabase Auth Admin table: {e}")
+
+    # ── 1. CORE PERFORMANCE OVERVIEW MATRIX (KPI CARDS) ───────────────────
+    try:
+        rpc_stats = supabase.rpc("get_dashboard_stats", {"p_owner_id": active_owner_uuid}).execute()
+        if rpc_stats.data:
+            s = rpc_stats.data[0]
+
+            # Safely extract with fallbacks to avoid NoneType errors
+            total_leads = s.get("total_candidates") or 0
+            high_risk = s.get("high_risk_count") or 0
+            urgent_reminders = s.get("urgent_followups") or 0
+
+            # FIX: Provide a default fallback string or float before calling float()
+            avg_risk = float(s.get("avg_churn_probability") or 0.0)
+
+            kpi_html = f"""
+            <div style="display:flex; gap:16px; margin-bottom:24px; flex-wrap: wrap;">
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#38bdf8;">{total_leads}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Leads Assigned</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#ef4444;">{high_risk}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">High Risk Churns</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#fbbf24;">{urgent_reminders}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Urgent Actions</div>
+                </div>
+                <div style="flex:1; min-width:180px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; text-align:center;">
+                    <div style="font-size:32px; font-weight:800; color:#a78bfa;">{avg_risk:.1%}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px; font-weight:500; text-transform:uppercase; letter-spacing:1px;">Avg Risk Baseline</div>
+                </div>
+            </div>
+            """
+            st.markdown(kpi_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"KPI compilation error: {e}")
+
+    # ── 2. SMART TASK REMINDERS QUEUE ─────────────────────────────────────
+    st.markdown('<div class="section-header"><h2> Prioritized Action Items (7 Days)</h2></div>',
+                unsafe_allow_html=True)
+    try:
+        reminders = supabase.rpc("get_followup_reminders", {"p_owner_id": active_owner_uuid}).execute()
+        if reminders.data:
+            df_reminders = pd.DataFrame(reminders.data)
+
+            # Formatted column layout summary
+            st.dataframe(
+                df_reminders[[
+                    "next_followup_date", "followup_priority", "candidate_name",
+                    "email", "course", "churn_probability", "interest_level"
+                ]].reset_index(drop=True),
+                use_container_width=True,
+                height=240,
+                column_config={
+                    "next_followup_date": st.column_config.TextColumn("Due Date", width="small"),
+                    "followup_priority": st.column_config.TextColumn("Priority"),
+                    "candidate_name": st.column_config.TextColumn("Student Name"),
+                    "email": st.column_config.TextColumn("Email Address"),
+                    "course": st.column_config.TextColumn("Course"),
+                    "churn_probability": st.column_config.NumberColumn("AI Risk", format="%.1%"),
+                    "interest_level": st.column_config.TextColumn("Interest"),
+                }
+            )
+        else:
+            st.success(" All clear! There are no pending follow-up tasks on your calendar for this week.")
+    except Exception as e:
+        st.info("No active follow-up entries resolved.")
+
+    # ── 3. INTERACTIVE TOUCHPOINT LOGGING FORM ─────────────────────────────
+    st.markdown('<div class="section-header"><h2> Log Live Communication Interaction</h2></div>',
+                unsafe_allow_html=True)
+
+    with st.expander("Open Communication Ingestion Terminal", expanded=True):
+        with st.container():
+            col1, col2 = st.columns(2)
+            with col1:
+                c_email = st.text_input("Candidate Target Email Reference", placeholder="student@example.com")
+                duration_sec = st.number_input("Call Duration Metrics (Seconds)", min_value=0, value=60, step=10)
+                interest = st.selectbox("Inferred Interest Level", ["High", "Medium", "Low"], index=1)
+
+            with col2:
+                direction = st.selectbox("Interaction Direction", ["outbound", "inbound"])
+                remark_cat = st.selectbox("Call Remark",
+                                          ['positive', 'negative', 'neutral', 'follow_up_required', 'resolved',
+                                           'callback_requested', 'not_interested', 'pricing_concern', 'time_constraint',
+                                           'need_more_info'])
+
+            st.markdown(
+                '<div style="margin-top: 15px; margin-bottom: 5px; font-size:14px; font-weight:600; color:#cbd5e1; border-bottom: 1px solid #334155; padding-bottom: 5px;"><i class="fa-solid fa-calendar-check" style="margin-right:8px; color:#38bdf8;"></i> Follow-up Action Plan</div>',
+                unsafe_allow_html=True)
+            f_req = st.toggle("Enable Future Follow-up", value=False)
+
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                f_date = st.date_input("Followup Date", min_value=datetime.today(), disabled=not f_req)
+            with col_f2:
+                f_pri = st.selectbox("Followup Priority", ["low", "medium", "high", "urgent"], index=1,
+                                     disabled=not f_req)
+
+            if "current_summary" not in st.session_state:
+                st.session_state["current_summary"] = ""
+            # This will quietly hold onto the Enum string behind the scenes
+            if "hidden_outcome" not in st.session_state:
+                st.session_state["hidden_outcome"] = ""
+            if "previous_text" not in st.session_state:
+                st.session_state["previous_text"] = ""
+
+            # 1. User inputs transcript
+            transcript_text = st.text_area(
+                "Full Audio Call Transcription",
+                placeholder="Paste conversation transcription details here...",
+                height=200
+            )
+
+            # Watch for Paste Event (Auto-generates summary and outcome)
+            if transcript_text.strip() and transcript_text != st.session_state["previous_text"]:
+                if not GROQ_API_KEY:
+                    st.error("Missing GROQ_API_KEY in your local .env configuration.")
+                else:
+                    with st.spinner("Processing Malayalam text..."):
+                        result = live_groq_pipeline(transcript_text, GROQ_API_KEY)
+                        if result:
+                            st.session_state["current_summary"] = result.get("summary", "")
+                            st.session_state["hidden_outcome"] = result.get("call_outcome", "")
+                            st.session_state["previous_text"] = transcript_text
+                            st.rerun()
+
+            # Reset state if text box is cleared
+            if not transcript_text.strip() and st.session_state["current_summary"]:
+                st.session_state["current_summary"] = ""
+                st.session_state["hidden_outcome"] = ""
+                st.session_state["previous_text"] = ""
+                st.rerun()
+
+            # 2. Display Generated Summary (The user can read/edit this if necessary)
+            remarks_text = st.text_area(
+                "Transcription Summary",
+                value=st.session_state["current_summary"],
+                placeholder="Summary will auto-generate here...",
+                height=100
+            )
+
+            st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+            if st.button("Commit Log Ingestion", type="primary", use_container_width=True):
+                if not c_email:
+                    st.error("Please specify a target email identity mapping reference.")
+                else:
+                    f_date_str = f_date.strftime("%Y-%m-%d") if f_req else None
+
+                    # ── STAGE 1: FETCH THE USER ID FROM SUPABASE AUTH ────────────────
+                    active_owner_uuid = None
+                    try:
+                        # Fetch users from Supabase Auth admin panel
+                        auth_response = supabase_service.auth.admin.list_users()
+
+                        # The SDK returns an object where the user list is attached to `.users`
+                        # or can be unpacked directly if handled as a raw data wrapper
+                        users_list = getattr(auth_response, 'users', auth_response)
+
+                        if users_list:
+                            # Loop through the user list to find the exact email match
+                            for user in users_list:
+                                if hasattr(user,
+                                           'email') and user.email.lower().strip() == current_user_email.lower().strip():
+                                    active_owner_uuid = user.id
+                                    break
+
+                    except Exception as e:
+                        print(f"Error querying Supabase Auth Admin table: {e}")
+
+                    # ── STAGE 2: FETCH THE LEGACY LABEL FROM SALESPERSON MAPPING ─────
+                    legacy_agent_label = "Unknown Agent"
+                    try:
+                        agent_query = supabase.table("salesperson_mappings") \
+                            .select("legacy_label") \
+                            .eq("salesperson_email", current_user_email.strip()) \
+                            .limit(1).execute()
+
+                        if agent_query.data and agent_query.data[0].get("legacy_label"):
+                            legacy_agent_label = agent_query.data[0]["legacy_label"]
+                    except Exception as e:
+                        print(f"Error looking up legacy mapping table: {e}")
+
+                    # ── STAGE 3: VALIDATION AND EXECUTION ────────────────────────────
+                    if not active_owner_uuid:
+                        st.error(
+                            f" Ingestion Blocked: Found your session email ('{current_user_email}'), but it does not map to any registered account in Supabase Auth.")
+                    else:
+                        # Execute log insertion using the freshly resolved UUID
+                        success, message = log_crm_call_interaction(
+                            email=c_email.strip(),
+                            duration_sec=int(duration_sec),
+                            agent_name=legacy_agent_label,
+                            owner_id=active_owner_uuid,  # <-- Pass the real Auth UUID here!
+                            direction=direction,
+                            outcomes_list=[st.session_state["hidden_outcome"]],
+                            remark_cat=remark_cat,
+                            summary_text=remarks_text[:200] if remarks_text else "No summary provided.",
+                            interest=interest,
+                            followup_req=f_req,
+                            next_followup_str=f_date_str,
+                            priority=f_pri
+                        )
+
+                        if success:
+                            st.success("Interaction touchpoint committed directly to transactional registries.")
+                            st.rerun()
+                        else:
+                            st.error(f"Transaction Aborted: {message}")
+
 
 # ─────────────────────────────────────────────
 # PAGE 9 — MODEL PERFORMANCE

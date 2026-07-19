@@ -72,10 +72,6 @@ print(f"Artifacts will be saved to: {ARTIFACTS_PATH}")
 
 *   Enrolled dataset
 *   All notes dataset
-
-
-
-
 """
 
 base_dir = os.path.join('data')
@@ -292,10 +288,6 @@ def standardize_city_name(city_string):
     # If the string is empty after cleaning, return 'Unknown'
     if not city_string:
         return 'Unknown'
-
-    # Default to 'Other' if not specifically matched, to consolidate less frequent cities
-    #if enrolled_df['City'].value_counts()[city_string] < 5: # Example threshold, can be adjusted
-    #    return 'Other'
 
     return city_string.title() # Convert to title case for consistency
 
@@ -671,7 +663,7 @@ def standardize_course_name(course_string):
 
     course_string = str(course_string).upper()
 
-    # Remove general noise: extra spaces, some punctuation, but be careful not to remove critical parts
+    # Remove general noise: extra spaces, some punctuation
     # Allow A-Z, 0-9, spaces, &, and hyphens. Only allow these characters
     course_string = re.sub(r'[^-A-Z0-9\s&]', '', course_string)
     course_string = ' '.join(course_string.split()) # Normalize spaces
@@ -682,18 +674,14 @@ def standardize_course_name(course_string):
     course_string = course_string.replace('M.TECH', 'MTECH')
     course_string = course_string.replace('BSC CS', 'BSC-CS')
     course_string = course_string.replace('MSC CS', 'MSC-CS')
-    #course_string = course_string.replace('COMPUTER APPLICATION', 'CA')
     course_string = course_string.replace('BACHELOR OF COMPUTER APPLICATION - COMPUTER APPLICATION', 'BCA')
-    # Add BVOC specific standardization
+
     course_string = course_string.replace('BVOC DATA ANALYTICS AND MACHINE LEARNING', 'B VOC-IT')
     course_string = course_string.replace('BVOC', 'B VOC') # General BVOC
 
     course_string = course_string.replace('COMPUTER SCIENCE AND ENGINEERING', 'BTECH')
-    #course_string = course_string.replace('COMPUTER SCIENCE', 'BTECH')
-    #course_string = course_string.replace('INFORMATION TECHNOLOGY', 'BTECH')
     course_string = course_string.replace('DATA ANALYTICS', 'DA')
     course_string = course_string.replace('DATA SCIENCE', 'DS')
-    #course_string = course_string.replace('BIG DATA ANALYTICS', 'BDA')
     course_string = course_string.replace('ENGLISH LITERATURE', 'BA')
     course_string = course_string.replace('PLUS TWO', 'PLUS TWO')
     course_string = course_string.replace('DIPLOMA', 'DIPLOMA')
@@ -867,21 +855,11 @@ print("Original 'Semester' column value counts (before filling nulls):")
 print(enrolled_df['Semester'].value_counts(dropna=False))
 print("\n'Semester' column data type:", enrolled_df['Semester'].dtype)
 
-# --- Step 1: Handle 'graduated' candidates (Year of Graduation <= 2025) ---
-# The prompt states: "if already graduated that is for year till 2025 candidates are already graduated so make those rows"
-# This implies that for candidates with 'Year of Graduation' up to and including 2025,
-# if their 'Semester' is null, we should treat them as not actively in a semester.
-# Assign 0 to 'Semester' for these cases.
 
 graduated_null_mask = enrolled_df['Semester'].isnull() & (enrolled_df['Year of Graduation'] <= 2025)
 enrolled_df.loc[graduated_null_mask, 'Semester'] = 0
 
 print(f"\nFilled {graduated_null_mask.sum()} null 'Semester' values for graduated candidates (Year <= 2025) with 0.")
-
-# --- Step 2: Fill remaining nulls for 'still studying' candidates (Year of Graduation > 2025) ---
-# These are candidates whose 'Year of Graduation' is in the future (after 2025, which is the cutoff for 'graduated').
-# For these, we will infer a semester based on their 'Education' type,
-# by randomly selecting from a typical range of semesters for that education.
 
 remaining_null_mask = enrolled_df['Semester'].isnull()
 
@@ -934,9 +912,6 @@ if remaining_null_mask.sum() > 0:
 else:
     print("No remaining null values found in 'Semester' column to fill after initial graduated fill.")
 
-# --- Step 3: Convert 'Semester' to integer type ---
-# Use 'Int64' to allow for NaN values if any remain (though ideally all should be filled)
-# and also correctly represent integer semesters.
 enrolled_df['Semester'] = enrolled_df['Semester'].astype('Int64')
 
 print("\nFinal 'Semester' column value counts after filling nulls and type conversion:")
@@ -1193,17 +1168,11 @@ except NameError:
 print("Original 'Experience' column null count:")
 print(enrolled_df['Experience'].isnull().sum())
 
-# --- Step 1: Handle 'not yet graduated' candidates ---
-# Candidates whose 'Year of Graduation' is greater than CURRENT_YEAR are considered not yet graduated
-# They should have 0 experience.
 not_graduated_null_experience_mask = enrolled_df['Experience'].isnull() & (enrolled_df['Year of Graduation'] > CURRENT_YEAR)
 enrolled_df.loc[not_graduated_null_experience_mask, 'Experience'] = 0
 
 print(f"Filled {not_graduated_null_experience_mask.sum()} null 'Experience' values for 'not yet graduated' candidates with 0.")
 
-# --- Step 2: Handle remaining nulls for 'graduated' candidates ---
-# For those who have graduated (Year of Graduation <= CURRENT_YEAR) but have null Experience,
-# fill with a random number of years between 0 and (CURRENT_YEAR - Year of Graduation).
 remaining_null_experience_mask = enrolled_df['Experience'].isnull()
 num_remaining_nulls = remaining_null_experience_mask.sum()
 
@@ -1222,9 +1191,6 @@ if num_remaining_nulls > 0:
 else:
     print("No remaining null values found in 'Experience' to fill.")
 
-# --- Step 3: Convert 'Experience' to integer type ---
-# Use 'Int64' to allow for NaN values if any remain (though ideally all should be filled)
-# and also correctly represent integer experience.
 enrolled_df['Experience'] = enrolled_df['Experience'].astype('Int64')
 
 print("\nFinal 'Experience' column null count:")
@@ -2133,39 +2099,7 @@ plt.legend(title='Status')
 plt.tight_layout()
 plt.show()
 
-"""#### **17. Investigating Low Enrollment in Non-Dominant Courses**"""
-
-# Identify courses with low 'Joined' counts for deeper analysis
-course_status_counts = enrolled.groupby('Course')['Status'].value_counts().unstack(fill_value=0)
-low_enrollment_threshold = 50 # Courses with 50 or fewer 'Joined' candidates
-
-low_enrollment_courses = course_status_counts[course_status_counts['Joined'] < low_enrollment_threshold].index.tolist()
-
-# Exclude MERN Stack from generic grouping if its count is relatively higher than others but still below threshold
-if 'MERN Stack' in low_enrollment_courses:
-    other_niche_courses = [c for c in low_enrollment_courses if c != 'MERN Stack']
-else:
-    other_niche_courses = low_enrollment_courses
-
-
-enrolled['Course_Grouped_Low_Enrollment'] = enrolled['Course'].apply(
-    lambda x: 'Other Niche Programs' if x in other_niche_courses else x
-)
-
-# Filter for only the low enrollment courses (including MERN Stack, and the 'Other Niche Programs')
-low_enrollment_df = enrolled[enrolled['Course_Grouped_Low_Enrollment'].isin(low_enrollment_courses + ['MERN Stack', 'Other Niche Programs'])].copy()
-
-plt.figure(figsize=(14, 7))
-sns.countplot(data=low_enrollment_df, x='Course_Grouped_Low_Enrollment', hue='Status', palette='viridis')
-plt.title('Enrollment Status for Low Enrollment Courses')
-plt.xlabel('Course Group')
-plt.ylabel('Count')
-plt.xticks(rotation=45, ha='right')
-plt.legend(title='Status')
-plt.tight_layout()
-plt.show()
-
-"""#### **18. Calculate and Analyze Paid Rate**"""
+"""#### **17. Calculate and Analyze Paid Rate**"""
 
 # Calculate 'Paid Rate'
 enrolled['Paid_Rate'] = (enrolled['Paid_amount'] / enrolled['Total_Amount']) * 100
@@ -2221,16 +2155,6 @@ print("\nDistribution of 'Status' in model_df:")
 print(model_df['Status'].value_counts())
 
 """### **Feature Engineering and Data Encoding**"""
-
-# Drop irrelevant columns for modeling
-# Columns like IDs, names, times, and raw text features are usually not directly used as features.
-# 'Program Joined.id' and 'Pipeline owner.id' are IDs.
-# 'Contact Id', 'Contact Owner.id', 'Created By.id', 'Modified By.id' are unique identifiers.
-# 'Contact Name', 'Email ID' are name-related.
-# 'Created Time', 'Modified Time', 'Last Activity Time', 'Lead Generated on', 'Payment_Date' are date/time related.
-# 'Whatsapp Number' is an identifier.
-# 'Course_Grouped_Low_Enrollment' is a derived column for visualization and 'Tag' is also a less useful direct feature.
-
 
 # Define base columns to drop (Removed 'final_inferred_reason' from here so we can parse it first)
 columns_to_drop = [
@@ -2368,40 +2292,6 @@ print(pd.Series(y_train_processed).value_counts())
 plt.figure(figsize=(8, 6))
 sns.countplot(x=y_train_processed)
 plt.title('Original Class Distribution in Training Data')
-plt.xlabel('Class (0: Churned, 1: Joined)')
-plt.ylabel('Count')
-plt.show()
-
-"""#### **1. Random Oversampling**"""
-
-# Apply RandomOverSampler
-ros = RandomOverSampler(random_state=42)
-X_resampled_ros, y_resampled_ros = ros.fit_resample(X_train_processed, y_train_processed)
-
-print("Class distribution after RandomOverSampler:")
-print(pd.Series(y_resampled_ros).value_counts())
-
-# Visualize class distribution after RandomOverSampler
-plt.figure(figsize=(8, 6))
-sns.countplot(x=y_resampled_ros)
-plt.title('Class Distribution After RandomOverSampler')
-plt.xlabel('Class (0: Churned, 1: Joined)')
-plt.ylabel('Count')
-plt.show()
-
-"""#### **2. SMOTE (Synthetic Minority Over-sampling Technique)**"""
-
-# Apply SMOTE
-smote = SMOTE(random_state=42)
-X_resampled_smote, y_resampled_smote = smote.fit_resample(X_train_processed, y_train_processed)
-
-print("Class distribution after SMOTE:")
-print(pd.Series(y_resampled_smote).value_counts())
-
-# Visualize class distribution after SMOTE
-plt.figure(figsize=(8, 6))
-sns.countplot(x=y_resampled_smote)
-plt.title('Class Distribution After SMOTE')
 plt.xlabel('Class (0: Churned, 1: Joined)')
 plt.ylabel('Count')
 plt.show()
@@ -2763,9 +2653,6 @@ print(cv_results_df_untuned)
 print(cv_results_df_untuned)
 
 """### **Hyperparameter Tuning**
-
-
-
 """
 
 # Define parameter grids for each model
@@ -3066,8 +2953,6 @@ print("\n--- Classification Report ---")
 print(classification_report(y_test_processed, y_pred_final))
 
 """### **Cross-Validation Report for the Final Model**
-
-
 """
 
 # Identify the best model and its balancing method
@@ -3285,7 +3170,7 @@ model_data = {
 }
 
 try:
-    print("\n📡 Connecting to Supabase to update model registries...")
+    print("\n Connecting to Supabase to update model registries...")
 
     # 2. Extract the exact performance metrics row for your winning model
     winning_metrics = results_df[results_df['Model'] == model_data['model_name']].iloc[0]
@@ -3342,10 +3227,10 @@ try:
     # Step B: Insert the complete record into your 'public.model_versions' table
     supabase.table("model_versions").insert(db_payload).execute()
 
-    print(f"🎉 Success! Model version '{generated_version}' metrics logged permanently to Supabase.")
+    print(f" Success! Model version '{generated_version}' metrics logged permanently to Supabase.")
 
 except Exception as db_err:
-    print(f"❌ Failed to push metrics to database directly: {db_err}")
+    print(f" Failed to push metrics to database directly: {db_err}")
 
 # Save the model_data dictionary to a pickle file
 model_output_path = os.path.join(ARTIFACTS_PATH, 'prediction_model.pkl')
