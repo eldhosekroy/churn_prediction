@@ -725,10 +725,6 @@ def identify_risk_factors(input_data: dict) -> dict:
         risk_factors["no_test_completed"] = True
     if input_data.get('Followup Email') == "No":
         risk_factors["no_followup_engagement"] = True
-    if int(input_data.get('Experience') or 0) == 0:
-        risk_factors["zero_experience"] = True
-    if input_data.get('Mode of Program Joined') == "Online":
-        risk_factors["online_program"] = True
     if input_data.get('Feedback') and "poor" in str(input_data.get('Feedback')).lower():
         risk_factors["negative_feedback"] = True
 
